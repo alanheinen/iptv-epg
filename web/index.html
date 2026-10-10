@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Signal TV Guide</title>
+<meta name="description" content="A live programme guide and player for the free US channels listed in iptv-org/iptv.">
+<meta name="theme-color" content="#0d141d">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d141d'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23f2a93b'/%3E%3Cpath d='M8 8a11 11 0 0 0 0 16M24 8a11 11 0 0 1 0 16' stroke='%23f2a93b' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <a class="brand" href="./" aria-label="Signal TV Guide home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="5"/><path d="M8 8a11 11 0 0 0 0 16M24 8a11 11 0 0 1 0 16"/></svg>
+      <span class="brand-name">Signal</span>
+    </a>
+    <div class="clock" id="clock" aria-live="off"></div>
+    <div class="top-meta" id="meta">Loading channels…</div>
+    <button class="icon-btn" id="themeBtn" type="button" title="Switch light or dark" aria-label="Switch light or dark theme">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+    </button>
+  </header>
+
+  <section class="stage" id="stage">
+    <div class="screen" id="screen">
+      <video id="video" playsinline controls preload="none"></video>
+      <div class="screen-overlay" id="overlay">
+        <div class="tally"><span class="tally-dot"></span>Pick a channel</div>
+        <p class="overlay-text" id="overlayText">Choose any row in the guide below. Use <kbd>[</kbd> and <kbd>]</kbd> to surf channels.</p>
+        <div class="overlay-actions" id="overlayActions"></div>
+      </div>
+    </div>
+
+    <aside class="now" id="nowPanel" aria-live="polite">
+      <div class="now-chan">
+        <div class="logo lg" id="nowLogo"></div>
+        <div class="now-chan-text">
+          <div class="now-num" id="nowNum">—</div>
+          <h2 class="now-name" id="nowName">Nothing tuned</h2>
+          <div class="now-src" id="nowSrc"></div>
+        </div>
+        <button class="icon-btn fav" id="favBtn" type="button" aria-pressed="false" title="Add to favorites (F)" aria-label="Add to favorites" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>
+        </button>
+      </div>
+      <div class="now-prog" id="nowProg">
+        <div class="eyebrow" id="nowEyebrow">On now</div>
+        <h3 class="prog-title" id="nowTitle">Tune in to see what's on</h3>
+        <div class="prog-time" id="nowTime"></div>
+        <div class="progress" id="nowBar" hidden><span></span></div>
+        <p class="prog-desc" id="nowDesc">Schedules come from public XMLTV feeds for Pluto TV, Samsung TV Plus, Plex, Roku and PBS. Other channels play without listings.</p>
+      </div>
+      <div class="next" id="nextList"></div>
+      <div class="streams" id="streams"></div>
+    </aside>
+  </section>
+
+  <section class="controls" aria-label="Filter channels">
+    <div class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+      <input id="q" type="search" placeholder="Search channels or shows" autocomplete="off" aria-label="Search channels or shows">
+      <kbd class="hint">/</kbd>
+    </div>
+    <label class="select">
+      <span class="sr-only">Source</span>
+      <select id="source" aria-label="Source playlist"><option value="">All sources</option></select>
+    </label>
+    <div class="toggles" role="group" aria-label="Show only">
+      <button type="button" class="toggle" id="tGuide" aria-pressed="false">Has listings</button>
+      <button type="button" class="toggle" id="tFav" aria-pressed="false">Favorites</button>
+      <button type="button" class="toggle" id="tGeo" aria-pressed="false">Hide geo-blocked</button>
+    </div>
+    <button type="button" class="jump" id="jumpNow">Now</button>
+  </section>
+  <nav class="cats" id="cats" aria-label="Categories"></nav>
+
+  <section class="guide-wrap">
+    <div class="guide" id="guide" tabindex="0" aria-label="Programme guide">
+      <div class="canvas" id="canvas">
+        <div class="ruler" id="ruler"><div class="corner" id="corner"></div><div class="ticks" id="ticks"></div></div>
+        <div class="rows" id="rows"></div>
+        <div class="nowline" id="nowline"><span></span></div>
+      </div>
+    </div>
+    <div class="empty" id="empty" hidden></div>
+  </section>
+
+  <footer class="foot">
+    Channels and streams from <a href="https://github.com/iptv-org/iptv" target="_blank" rel="noopener">iptv-org/iptv</a> ·
+    listings from <a href="https://i.mjh.nz/" target="_blank" rel="noopener">i.mjh.nz</a> ·
+    <span id="built"></span>
+  </footer>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
