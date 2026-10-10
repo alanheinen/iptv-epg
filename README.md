@@ -35,14 +35,22 @@ It listens on 127.0.0.1 only. Use `--host 0.0.0.0` to watch from other devices
 on your network. Any static server works too (`python3 -m http.server -d web`),
 but without the proxy far fewer channels play, and Pluto channels don't play at all.
 
-## Hosting
+## Container
 
-`.github/workflows/pages.yml` rebuilds the data every 4 hours and deploys `web/`
-to GitHub Pages. Enable Pages with source "GitHub Actions" in the repo settings.
+```bash
+docker build -t signal-tv .
+docker run --rm -p 8080:8080 --read-only --tmpfs /data:uid=1000,gid=1000 signal-tv
+```
 
-Pages is static, so there's no proxy: Pluto TV and CORS-blocked streams won't
-play, and on HTTPS the browser also blocks plain-`http://` streams (about 10% of
-channels). Run `serve.py` for the full set.
+The image runs `serve.py` as UID 1000 with a read-only root filesystem. It
+builds the guide data into `/data` at startup (ready in about 10 s; `/healthz`
+returns 503 until then) and rebuilds it every 4 hours. Give it about 512 MiB:
+idle use is about 25 MiB, but the rebuild peaks near 250 MiB.
+
+`.github/workflows/image.yml` builds, smoke-tests and Trivy-scans the image on
+every push and PR, and on `main` pushes `ghcr.io/alanheinen/iptv-epg:sha-<commit>`.
+The homelab deployment pins a digest in k8s-2025 under
+`config/applications/signal-tv/`.
 
 ## Keys
 

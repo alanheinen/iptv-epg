@@ -18,6 +18,10 @@ Besides the static files in web/, it answers:
 Requests to private, loopback and link-local addresses are refused so the
 proxy can't be used to reach your own network. It binds to 127.0.0.1 unless
 you pass --host. Standard library only.
+
+With --data DIR the guide data is served from DIR instead of web/data, and
+with --refresh HOURS the server rebuilds it (scripts/build.py) at startup and
+on that interval, which is how the container keeps its listings current.
 """
 
 from __future__ import annotations
@@ -27,6 +31,8 @@ import ipaddress
 import json
 import re
 import socket
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -37,6 +43,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 WEB = Path(__file__).resolve().parent.parent / "web"
+BUILD = Path(__file__).resolve().parent / "build.py"
+DATA = WEB / "data"
 DEFAULT_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 TIMEOUT = 20
@@ -159,6 +167,14 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(WEB), **kw)
 
+    def translate_path(self, path):
+        clean = urllib.parse.unquote(path.split("?", 1)[0])
+        if clean.startswith("/data/"):
+            name = clean[len("/data/"):]
+            if name in ("channels.json", "guide.json"):
+                return str(DATA / name)
+        return super().translate_path(path)
+
     def log_message(self, fmt, *args):
         if not self.path.startswith("/proxy"):
             super().log_message(fmt, *args)
@@ -175,6 +191,9 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             if path == "/api/health":
                 return self.send_json({"proxy": True, "pluto": True})
+            if path == "/healthz":
+                ok = (DATA / "channels.json").exists()
+                return self.send_json({"ready": ok}) if ok else self.send_error(503, "guide data not built yet")
             if path == "/proxy":
                 q = urllib.parse.parse_qs(query)
                 return self.relay(q.get("u", [""])[0], q.get("r", [""])[0], q.get("a", [""])[0])
@@ -232,16 +251,37 @@ class Handler(SimpleHTTPRequestHandler):
                 pass
 
 
+def refresher(hours: float) -> None:
+    """Rebuild the guide data now and then every `hours`, in a child process
+    so the parser's memory is returned after each run."""
+    while True:
+        started = time.time()
+        r = subprocess.run([sys.executable, str(BUILD), "--out", str(DATA)])
+        if r.returncode != 0:
+            print(f"guide refresh failed (exit {r.returncode}); retrying in 10 minutes", flush=True)
+            time.sleep(600)
+            continue
+        time.sleep(max(60.0, hours * 3600 - (time.time() - started)))
+
+
 def main():
+    global DATA
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--data", help="directory holding channels.json and guide.json (default web/data)")
+    ap.add_argument("--refresh", type=float, default=0, help="rebuild the guide data every N hours (0 = never)")
     a = ap.parse_args()
-    if not (WEB / "data" / "channels.json").exists():
-        print("web/data/channels.json is missing. Run: python3 scripts/build.py")
+    if a.data:
+        DATA = Path(a.data)
+        DATA.mkdir(parents=True, exist_ok=True)
+    if a.refresh > 0:
+        threading.Thread(target=refresher, args=(a.refresh,), daemon=True).start()
+    elif not (DATA / "channels.json").exists():
+        print(f"{DATA}/channels.json is missing. Run: python3 scripts/build.py", flush=True)
     srv = ThreadingHTTPServer((a.host, a.port), Handler)
     srv.daemon_threads = True
-    print(f"Signal TV Guide on http://{a.host if a.host != '0.0.0.0' else 'localhost'}:{a.port}")
+    print(f"Signal TV Guide on http://{a.host if a.host != '0.0.0.0' else 'localhost'}:{a.port}", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

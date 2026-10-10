@@ -326,15 +326,19 @@ def main() -> int:
         sources[c["src"]] = sources.get(c["src"], 0) + 1
 
     built = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    (out / "channels.json").write_text(json.dumps({
+    def write(name: str, obj) -> None:
+        # Write then rename, so a server reading the directory never sees half a file.
+        tmp = out / f".{name}.tmp"
+        tmp.write_text(json.dumps(obj, separators=(",", ":"), ensure_ascii=False))
+        tmp.replace(out / name)
+
+    write("channels.json", {
         "built": built,
         "sources": [{"id": k, "label": SOURCE_LABELS.get(k, k.removeprefix("us_").title()), "count": v}
                     for k, v in sorted(sources.items(), key=lambda kv: -kv[1])],
         "channels": chan_list,
-    }, separators=(",", ":"), ensure_ascii=False))
-    (out / "guide.json").write_text(json.dumps({
-        "built": built, "from": lo // 60, "to": hi // 60, "guide": guide,
-    }, separators=(",", ":"), ensure_ascii=False))
+    })
+    write("guide.json", {"built": built, "from": lo // 60, "to": hi // 60, "guide": guide})
 
     with_epg = sum(1 for c in chan_list if c["epg"])
     log(f"done: {len(chan_list)} channels, {with_epg} with guide data -> {out}")
