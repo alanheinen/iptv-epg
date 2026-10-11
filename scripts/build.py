@@ -350,6 +350,30 @@ def main() -> int:
         if best is None or score > best["_s"]:
             logos[key] = {**l, "_s": score}
 
+    # iptv-org's own guide mappings (channel/feed -> site + site_id), used as a
+    # last resort for channels nothing else matched. Only the sites whose data
+    # this build already downloads are usable: i.mjh.nz feeds and plex.tv.
+    try:
+        guides = json.loads(fetch(API + "guides.json"))
+    except Exception as e:  # noqa: BLE001 - optional; matching works without it
+        log(f"  guides.json unavailable ({e})")
+        guides = []
+    MJH = {"PlutoTV/us": "pluto", "SamsungTVPlus/us": "samsung", "Plex/us": "plex", "Roku/all": "roku", "PBS/all": "pbs"}
+    mapped: dict[tuple, list] = {}
+    for g in guides:
+        if g.get("site") == "i.mjh.nz":
+            feed_name, _, sid = (g.get("site_id") or "").partition("#")
+            if feed_name in MJH:
+                hit = (MJH[feed_name], sid)
+            else:
+                continue
+        elif g.get("site") == "plex.tv":
+            hit = ("plex-suffix", g.get("site_id") or "")
+        else:
+            continue
+        for k in ((g["channel"], g.get("feed")), (g["channel"], None)):
+            mapped.setdefault(k, []).append(hit)
+
     epg_names: dict[str, dict] = {}
     epg_progs: dict[str, dict] = {}
     fresh: dict[str, str] = {}  # cacheable feeds downloaded this run -> Last-Modified
@@ -398,6 +422,18 @@ def main() -> int:
                 if n and len(n) > 2:
                     name_idx[k].setdefault(n, cid)
 
+    # i.mjh.nz's Plex ids are "<plex-region-id>-<plex.tv channel id>".
+    plex_by_suffix = {cid.rpartition("-")[2]: cid for cid in epg_progs.get("plex", {})}
+
+    def match_mapped(e: dict) -> tuple[str, str] | None:
+        cid_meta, _, feed = e["tvg"].partition("@")
+        for k, sid in mapped.get((cid_meta, feed or None), []) + mapped.get((cid_meta, None), []):
+            if k == "plex-suffix":
+                k, sid = "plex", plex_by_suffix.get(sid, "")
+            if sid and sid in epg_progs.get(k, {}):
+                return k, sid
+        return None
+
     def match_epg(e: dict) -> tuple[str, str] | None:
         m = re.search(r"plu-([0-9a-f]{24})", e["url"]) or re.search(r"/channel/([0-9a-f]{24})/", e["url"])
         if m and m.group(1) in epg_progs.get("pluto", {}):
@@ -424,7 +460,7 @@ def main() -> int:
                 cid = name_idx.get(k, {}).get(key)
                 if cid:
                     return k, cid
-        return None
+        return match_mapped(e)
 
     def cid_of(tvg: str) -> str:
         # "CNNInternational.us@SD" -> "CNNInternational"

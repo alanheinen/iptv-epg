@@ -13,6 +13,10 @@ A browser TV guide and player for the free US channels listed in
 - Guide grid with a live now-line, channel search that also matches show titles,
   source and category filters, favorites, and an HLS player (hls.js) that falls
   back through a channel's alternate streams when one fails
+- Google Cast (Chromecast, Google TV, Nest Hub) from Chrome or Edge, when the
+  proxy is running. The TV is handed a link through the proxy, so it gets
+  HTTPS and CORS for every stream, and the TV must be able to resolve and
+  reach the server's hostname
 - A copy button on every channel row for the stream URL, to open it in VLC or
   mpv. Pluto channels and streams that need special headers copy as a link
   through the proxy, since their raw URLs don't play on their own
@@ -85,6 +89,8 @@ The homelab deployment pins a digest in k8s-2025 under
 4. Station call sign (`ABC.us@KRGVTV`, `CBS 9 Oklahoma City OK (KWTV-DT1)`)
    → the epgshare01 locals feed, for the broadcast, local and PBS playlists only
 5. Normalised channel name → cable, sports, then the FAST service feeds
+6. iptv-org's own guide mappings (`guides.json`) that point at a feed the
+   build already downloads (i.mjh.nz, plex.tv)
 
 Step 4 is deliberately strict, because a wrong schedule is worse than none.
 The locals feed has each station's main channel only, so subchannels

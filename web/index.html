@@ -44,6 +44,9 @@
           <h2 class="now-name" id="nowName">Nothing tuned</h2>
           <div class="now-src" id="nowSrc"></div>
         </div>
+        <button class="icon-btn cast" id="castBtn" type="button" aria-pressed="false" title="Cast to a TV" aria-label="Cast to a TV" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17a4 4 0 0 1 4 4M3 13a8 8 0 0 1 8 8M3 9.2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/><circle cx="3.6" cy="20.4" r=".6"/></svg>
+        </button>
         <button class="icon-btn fav" id="favBtn" type="button" aria-pressed="false" title="Add to favorites (F)" aria-label="Add to favorites" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>
         </button>
@@ -53,7 +56,7 @@
         <h3 class="prog-title" id="nowTitle">Tune in to see what's on</h3>
         <div class="prog-time" id="nowTime"></div>
         <div class="progress" id="nowBar" hidden><span></span></div>
-        <p class="prog-desc" id="nowDesc">Schedules come from public XMLTV feeds for Pluto TV, Samsung TV Plus, Plex, Roku and PBS. Other channels play without listings.</p>
+        <p class="prog-desc" id="nowDesc">Schedules come from public XMLTV feeds for the FAST services, cable networks and local stations. Other channels play without listings.</p>
       </div>
       <div class="next" id="nextList"></div>
       <div class="streams" id="streams"></div>

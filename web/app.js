@@ -11,7 +11,7 @@
     nextList: $("#nextList"), streams: $("#streams"),
     q: $("#q"), source: $("#source"), tGuide: $("#tGuide"), tFav: $("#tFav"), tGeo: $("#tGeo"), jumpNow: $("#jumpNow"), cats: $("#cats"),
     guide: $("#guide"), canvas: $("#canvas"), ticks: $("#ticks"), corner: $("#corner"), rows: $("#rows"), nowline: $("#nowline"), empty: $("#empty"),
-    toast: $("#toast"), themeBtn: $("#themeBtn"),
+    toast: $("#toast"), themeBtn: $("#themeBtn"), castBtn: $("#castBtn"),
   };
 
   // ------------------------------------------------------------ storage
@@ -330,9 +330,10 @@
   let hls = null, token = 0, watchdog = 0;
 
   function overlay(state, text, actions = "") {
-    els.screen.classList.remove("loading", "error", "playing");
+    els.screen.classList.remove("loading", "error", "playing", "casting");
     if (state) els.screen.classList.add(state);
-    els.overlay.querySelector(".tally").lastChild.textContent = state === "loading" ? "Tuning" : state === "error" ? "No signal" : "Ready";
+    els.overlay.querySelector(".tally").lastChild.textContent =
+      { loading: "Tuning", error: "No signal", casting: "Casting" }[state] || "Ready";
     els.overlayText.innerHTML = text;
     els.overlayActions.innerHTML = actions;
   }
@@ -383,6 +384,7 @@
     select(id, { keepProg: opts.keepProg });
     store.set("last", id);
     stop();
+    if (Cast.session()) return Cast.load(c, idx, opts);
     const my = token;
 
     // Find the next stream we can attempt.
@@ -433,6 +435,135 @@
       v.play().catch(() => playPrompt(c));
     }
   }
+
+  // ------------------------------------------------------------ cast
+  // Google Cast (Chromecast, Google TV, Nest Hub) through the Default Media
+  // Receiver. The TV fetches the stream itself, so it always gets a link
+  // through this server's proxy: HTTPS (the receiver page blocks plain HTTP)
+  // with CORS headers (it plays HLS with MSE). That needs the proxy, and the
+  // TV has to be able to resolve and reach this host.
+  const Cast = {
+    ctx: null,
+    session() { return this.ctx && this.ctx.getCurrentSession(); },
+
+    init() {
+      if (!S.proxy || !/Chrome|CriOS|Edg/.test(navigator.userAgent)) return;
+      window.__onGCastApiAvailable = (ok) => { if (ok) this.ready(); };
+      const sc = document.createElement("script");
+      sc.src = "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1";
+      sc.async = true;
+      document.head.appendChild(sc);
+    },
+
+    ready() {
+      const cf = cast.framework;
+      this.ctx = cf.CastContext.getInstance();
+      this.ctx.setOptions({ receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID, autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED });
+      const sync = () => {
+        const st = this.ctx.getCastState();
+        els.castBtn.hidden = st === cf.CastState.NO_DEVICES_AVAILABLE;
+        const on = st === cf.CastState.CONNECTED;
+        els.castBtn.setAttribute("aria-pressed", on);
+        els.castBtn.title = on ? `Casting to ${this.device()}. Click to stop.` : "Cast to a TV";
+      };
+      this.ctx.addEventListener(cf.CastContextEventType.CAST_STATE_CHANGED, sync);
+      this.ctx.addEventListener(cf.CastContextEventType.SESSION_STATE_CHANGED, (e) => {
+        const SS = cf.SessionState;
+        if ((e.sessionState === SS.SESSION_STARTED || e.sessionState === SS.SESSION_RESUMED) && S.sel) {
+          if (e.sessionState === SS.SESSION_STARTED || !this.session().getMediaSession()) tune(S.sel, S.playing && S.playing.ch === S.sel ? S.playing.idx : 0, { keepProg: true });
+          else this.showCasting(S.byId.get(S.sel));
+        }
+        if (e.sessionState === SS.SESSION_ENDED && S.sel) {
+          toast("Stopped casting");
+          playPrompt(S.byId.get(S.sel));
+        }
+      });
+      sync();
+    },
+
+    device() {
+      const s = this.session();
+      return (s && s.getCastDevice().friendlyName) || "your TV";
+    },
+
+    toggle() {
+      if (!this.ctx) return;
+      if (this.session()) this.ctx.endCurrentSession(true);
+      else this.ctx.requestSession().catch(() => { /* picker closed */ });
+    },
+
+    url(s) {
+      const pluto = s.url.match(/plu-([0-9a-f]{24})|\/channel\/([0-9a-f]{24})\//);
+      if (pluto) return new URL(`pluto/${pluto[1] || pluto[2]}.m3u8`, location.href).href;
+      const q = new URLSearchParams({ u: s.url });
+      if (s.ref) q.set("r", s.ref);
+      if (s.ua) q.set("a", s.ua);
+      return new URL(`proxy?${q}`, location.href).href;
+    },
+
+    // The receiver assumes MPEG-TS segments unless told otherwise, so look at
+    // the first variant playlist for an fMP4 init segment (#EXT-X-MAP).
+    async segmentFormat(url) {
+      const get = async (u) => {
+        const r = await fetch(u, { signal: AbortSignal.timeout(6000) });
+        return { text: await r.text(), url: r.url };
+      };
+      try {
+        let pl = await get(url);
+        const variant = pl.text.split("\n").find((l) => l.trim() && !l.startsWith("#"));
+        if (/#EXT-X-STREAM-INF/.test(pl.text) && variant) pl = await get(new URL(variant.trim(), pl.url).href);
+        return /#EXT-X-MAP/.test(pl.text) ? "fmp4" : "ts";
+      } catch { return "ts"; }
+    },
+
+    async load(c, idx = 0, opts = {}) {
+      const my = token;
+      const s = c.streams[idx];
+      if (!s) return this.fail(c, "none of its streams would load");
+      S.playing = { ch: c.id, idx };
+      renderStreams(c);
+      this.showCasting(c, true);
+      const url = this.url(s);
+      const fmt = await this.segmentFormat(url);
+      if (my !== token || !this.session()) return;
+      const info = new chrome.cast.media.MediaInfo(url, "application/x-mpegurl");
+      info.streamType = chrome.cast.media.StreamType.LIVE;
+      if (chrome.cast.media.HlsSegmentFormat) {
+        info.hlsSegmentFormat = fmt === "fmp4" ? chrome.cast.media.HlsSegmentFormat.FMP4 : chrome.cast.media.HlsSegmentFormat.TS;
+        if (fmt === "fmp4" && chrome.cast.media.HlsVideoSegmentFormat) info.hlsVideoSegmentFormat = chrome.cast.media.HlsVideoSegmentFormat.FMP4;
+      }
+      const md = new chrome.cast.media.GenericMediaMetadata();
+      const p = c.progs[currentIndex(c)];
+      md.title = p ? p[2] : c.name;
+      md.subtitle = p ? `CH ${c.num} · ${c.name}` : `CH ${c.num}`;
+      if (c.logo) md.images = [new chrome.cast.Image(c.logo)];
+      info.metadata = md;
+      const req = new chrome.cast.media.LoadRequest(info);
+      req.autoplay = true;
+      try {
+        await this.session().loadMedia(req);
+        if (my === token) this.showCasting(c);
+      } catch (err) {
+        if (my !== token) return;
+        S.bad.add(s.url);
+        if (!opts.single && idx + 1 < c.streams.length) return this.load(c, idx + 1, opts);
+        this.fail(c, `${this.device()} couldn't play it${err && err.code ? ` (${err.code})` : ""}`);
+      }
+    },
+
+    showCasting(c, loading) {
+      if (!c) return;
+      overlay("casting", `${loading ? "Sending" : "Casting"} <b>CH ${c.num} · ${esc(c.name)}</b> to <b>${esc(this.device())}</b>${loading ? "…" : ""}`,
+        `<button type="button" data-act="stopcast">Stop casting</button>`);
+    },
+
+    fail(c, why) {
+      S.playing = null;
+      renderStreams(c);
+      overlay("error", `<b>${esc(c.name)}</b> won't cast: ${esc(why)}.`,
+        `<button type="button" data-act="retry">Try again</button><button type="button" data-act="stopcast">Stop casting</button>`);
+    },
+  };
 
   function playPrompt(c) {
     overlay("", `Press play to watch <b>${esc(c.name)}</b>.`, `<button type="button" data-act="play">Play</button>`);
@@ -505,6 +636,7 @@
     const b = e.target.closest("button");
     if (!b) return;
     if (b.dataset.copy) { copyChannel(b.dataset.copy); return; }
+    if (b.dataset.act === "stopcast") { Cast.toggle(); return; }
     if (b.dataset.act === "retry") { S.byId.get(S.sel).streams.forEach((s) => S.bad.delete(s.url)); tune(S.sel, 0, { keepProg: true }); }
     if (b.dataset.act === "play") {
       if (els.video.currentSrc || hls) { els.video.play().catch(() => {}); els.screen.classList.add("playing"); }
@@ -535,6 +667,7 @@
   els.tGeo.addEventListener("click", () => { S.f.geo = !S.f.geo; applyFilters(); });
   els.jumpNow.addEventListener("click", () => { scrollToNow(true); if (S.sel) scrollToChannel(S.sel); });
   els.favBtn.addEventListener("click", toggleFav);
+  els.castBtn.addEventListener("click", () => Cast.toggle());
 
   document.addEventListener("keydown", (e) => {
     const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName);
@@ -600,6 +733,7 @@
       const h = await fetch("api/health", { cache: "no-store" });
       S.proxy = h.ok && (await h.json()).proxy === true;
     } catch { S.proxy = false; }
+    Cast.init();
     try {
       load(await fetchData());
     } catch (err) {

@@ -93,6 +93,11 @@ kbd {
 .icon-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 .icon-btn:hover:not(:disabled) { background: var(--surface-2); }
 .icon-btn:disabled { opacity: .4; cursor: default; }
+.icon-btn.cast[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.icon-btn.cast[aria-pressed="true"] svg { fill: none; }
+.screen.casting .screen-overlay { display: flex; }
+.screen.casting video { visibility: hidden; }
+.screen.casting .tally-dot { background: var(--accent); box-shadow: 0 0 12px var(--accent); }
 .fav[aria-pressed="true"] svg { fill: var(--accent); stroke: var(--accent); }
 
 /* ---------------------------------------------------------------- stage */
