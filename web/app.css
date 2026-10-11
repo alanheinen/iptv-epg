@@ -95,6 +95,8 @@ kbd {
 .icon-btn:disabled { opacity: .4; cursor: default; }
 .icon-btn.cast[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 .icon-btn.cast[aria-pressed="true"] svg { fill: none; }
+.icon-btn.cast.searching { opacity: .45; }
+.icon-btn.cast.searching:hover, .icon-btn.cast.searching:focus-visible { opacity: 1; }
 .screen.casting .screen-overlay { display: flex; }
 .screen.casting video { visibility: hidden; }
 .screen.casting .tally-dot { background: var(--accent); box-shadow: 0 0 12px var(--accent); }

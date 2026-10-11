@@ -14,9 +14,11 @@ A browser TV guide and player for the free US channels listed in
   source and category filters, favorites, and an HLS player (hls.js) that falls
   back through a channel's alternate streams when one fails
 - Google Cast (Chromecast, Google TV, Nest Hub) from Chrome or Edge, when the
-  proxy is running. The TV is handed a link through the proxy, so it gets
-  HTTPS and CORS for every stream, and the TV must be able to resolve and
-  reach the server's hostname
+  proxy is running. Streams that already have HTTPS and CORS go to the TV
+  directly; the rest, and Pluto, go through the proxy, so the TV must be able
+  to resolve and reach the server's hostname. The cast button stays visible
+  (dimmed) when Chrome has found no devices; clicking it opens Chrome's Cast
+  picker, which searches again
 - A copy button on every channel row for the stream URL, to open it in VLC or
   mpv. Pluto channels and streams that need special headers copy as a link
   through the proxy, since their raw URLs don't play on their own

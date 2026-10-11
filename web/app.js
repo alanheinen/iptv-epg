@@ -459,12 +459,19 @@
       const cf = cast.framework;
       this.ctx = cf.CastContext.getInstance();
       this.ctx.setOptions({ receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID, autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED });
+      // The button stays visible with no devices found: a page can't make
+      // Chrome rescan, but opening its Cast picker does, so a click is the
+      // "search again".
       const sync = () => {
         const st = this.ctx.getCastState();
-        els.castBtn.hidden = st === cf.CastState.NO_DEVICES_AVAILABLE;
+        const none = st === cf.CastState.NO_DEVICES_AVAILABLE;
         const on = st === cf.CastState.CONNECTED;
+        els.castBtn.hidden = false;
+        els.castBtn.classList.toggle("searching", none);
         els.castBtn.setAttribute("aria-pressed", on);
-        els.castBtn.title = on ? `Casting to ${this.device()}. Click to stop.` : "Cast to a TV";
+        els.castBtn.title = on ? `Casting to ${this.device()}. Click to stop.`
+          : none ? "No TVs found yet. Click to search again." : "Cast to a TV";
+        els.castBtn.setAttribute("aria-label", els.castBtn.title);
       };
       this.ctx.addEventListener(cf.CastContextEventType.CAST_STATE_CHANGED, sync);
       this.ctx.addEventListener(cf.CastContextEventType.SESSION_STATE_CHANGED, (e) => {
@@ -489,7 +496,10 @@
     toggle() {
       if (!this.ctx) return;
       if (this.session()) this.ctx.endCurrentSession(true);
-      else this.ctx.requestSession().catch(() => { /* picker closed */ });
+      else this.ctx.requestSession().catch((code) => {
+        if (code !== chrome.cast.ErrorCode.CANCEL && this.ctx.getCastState() === cast.framework.CastState.NO_DEVICES_AVAILABLE)
+          toast("No TVs found. Check the TV is on and on the same network");
+      });
     },
 
     proxyUrl(s) {
