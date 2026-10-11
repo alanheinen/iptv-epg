@@ -438,10 +438,10 @@
 
   // ------------------------------------------------------------ cast
   // Google Cast (Chromecast, Google TV, Nest Hub) through the Default Media
-  // Receiver. The TV fetches the stream itself, so it always gets a link
-  // through this server's proxy: HTTPS (the receiver page blocks plain HTTP)
-  // with CORS headers (it plays HLS with MSE). That needs the proxy, and the
-  // TV has to be able to resolve and reach this host.
+  // Receiver. The TV fetches the stream itself and needs HTTPS (the receiver
+  // page blocks plain HTTP) and CORS (it plays HLS with MSE). A stream that
+  // already has both goes to the TV directly; anything else, and Pluto, goes
+  // through this server's proxy, which the TV must be able to resolve and reach.
   const Cast = {
     ctx: null,
     session() { return this.ctx && this.ctx.getCurrentSession(); },
@@ -492,7 +492,7 @@
       else this.ctx.requestSession().catch(() => { /* picker closed */ });
     },
 
-    url(s) {
+    proxyUrl(s) {
       const pluto = s.url.match(/plu-([0-9a-f]{24})|\/channel\/([0-9a-f]{24})\//);
       if (pluto) return new URL(`pluto/${pluto[1] || pluto[2]}.m3u8`, location.href).href;
       const q = new URLSearchParams({ u: s.url });
@@ -501,19 +501,28 @@
       return new URL(`proxy?${q}`, location.href).href;
     },
 
-    // The receiver assumes MPEG-TS segments unless told otherwise, so look at
-    // the first variant playlist for an fMP4 init segment (#EXT-X-MAP).
-    async segmentFormat(url) {
+    // Pick the URL to hand the TV and the segment format to tell it (the
+    // receiver assumes MPEG-TS unless told otherwise). Fetching the playlists
+    // from this page is the CORS test: if the browser may read the master and
+    // the variant playlist directly, the receiver may too.
+    async source(s, opts = {}) {
       const get = async (u) => {
         const r = await fetch(u, { signal: AbortSignal.timeout(6000) });
+        if (!r.ok) throw new Error(r.status);
         return { text: await r.text(), url: r.url };
       };
-      try {
-        let pl = await get(url);
+      const probe = async (u) => {
+        let pl = await get(u);
         const variant = pl.text.split("\n").find((l) => l.trim() && !l.startsWith("#"));
         if (/#EXT-X-STREAM-INF/.test(pl.text) && variant) pl = await get(new URL(variant.trim(), pl.url).href);
         return /#EXT-X-MAP/.test(pl.text) ? "fmp4" : "ts";
-      } catch { return "ts"; }
+      };
+      const proxy = this.proxyUrl(s);
+      const directOk = !opts.viaProxy && s.url.startsWith("https:") && !s.ref && !s.ua && !proxy.includes("/pluto/");
+      if (directOk) {
+        try { return { url: s.url, fmt: await probe(s.url), via: "direct" }; } catch { /* no CORS or offline: use the proxy */ }
+      }
+      try { return { url: proxy, fmt: await probe(proxy), via: "proxy" }; } catch { return { url: proxy, fmt: "ts", via: "proxy" }; }
     },
 
     async load(c, idx = 0, opts = {}) {
@@ -523,8 +532,7 @@
       S.playing = { ch: c.id, idx };
       renderStreams(c);
       this.showCasting(c, true);
-      const url = this.url(s);
-      const fmt = await this.segmentFormat(url);
+      const { url, fmt, via } = await this.source(s, opts);
       if (my !== token || !this.session()) return;
       const info = new chrome.cast.media.MediaInfo(url, "application/x-mpegurl");
       info.streamType = chrome.cast.media.StreamType.LIVE;
@@ -545,8 +553,10 @@
         if (my === token) this.showCasting(c);
       } catch (err) {
         if (my !== token) return;
+        // A direct link the TV refused gets one more try through the proxy.
+        if (via === "direct" && !opts.viaProxy) return this.load(c, idx, { ...opts, viaProxy: true });
         S.bad.add(s.url);
-        if (!opts.single && idx + 1 < c.streams.length) return this.load(c, idx + 1, opts);
+        if (!opts.single && idx + 1 < c.streams.length) return this.load(c, idx + 1, { ...opts, viaProxy: false });
         this.fail(c, `${this.device()} couldn't play it${err && err.code ? ` (${err.code})` : ""}`);
       }
     },

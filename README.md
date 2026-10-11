@@ -41,11 +41,20 @@ match a cached feed after its next change upstream.
 `serve.py` serves the app plus a small stream proxy, and the page uses it
 automatically when it's there. The proxy:
 
-- starts a Pluto TV web session, because iptv-org's Pluto links are mostly
-  refused ("channel not permitted for partner") and Pluto rejects other origins
+- starts a Pluto TV web session per channel, because iptv-org's Pluto links
+  are mostly refused ("channel not permitted for partner") and Pluto rejects
+  other origins. A Pluto session plays one channel at a time, so sharing one
+  would let two viewers on different channels knock each other off
 - retries CORS-blocked streams server-side
 - sends the Referer / User-Agent some streams need
 - refuses private, loopback and link-local targets, so it can't reach your LAN
+- tells playlists from other files by their content (`#EXTM3U`), never the
+  Content-Type: Pluto labels its AES keys as playlists
+
+In the browser it's a fallback: a stream is tried directly first and goes
+through the proxy only when it has to (Pluto, plain HTTP on an HTTPS page,
+required headers, or a failed direct attempt). Casting follows the same rule.
+Proxy failures are logged with the upstream URL; successful fetches aren't.
 
 It listens on 127.0.0.1 only. Use `--host 0.0.0.0` to watch from other devices
 on your network. Any static server works too (`python3 -m http.server -d web`),

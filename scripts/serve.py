@@ -114,43 +114,62 @@ def rewrite_playlist(text: str, base: str, ref: str, ua: str) -> str:
     return "\n".join(out) + "\n"
 
 
-def is_playlist(url: str, ctype: str, head: bytes) -> bool:
-    return ("mpegurl" in ctype.lower() or urllib.parse.urlsplit(url).path.endswith(".m3u8")
-            or head.lstrip().startswith(b"#EXTM3U"))
+def is_playlist(head: bytes) -> bool:
+    # Sniff, never trust the Content-Type or extension: Pluto serves its
+    # 16-byte AES-128 keys as application/vnd.apple.mpegurl, and rewriting one
+    # as a playlist breaks decryption of every segment.
+    return head.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"#EXTM3U")
 
 
 # ---------------------------------------------------------------- pluto
 
 class Pluto:
+    """Pluto TV web sessions, one per channel. A session plays one channel at
+    a time: starting a second channel on it empties the first one's playlists
+    within a few seconds, so two viewers on different channels (or a TV being
+    cast to while the browser surfs) would knock each other off."""
+
     BOOT = "https://boot.pluto.tv/v4/start"
+    MAX = 64
 
     def __init__(self):
         self.lock = threading.Lock()
-        self.session = None
-        self.expires = 0.0
-        self.client = str(uuid.uuid4())
+        self.sessions: dict[str, tuple[dict, float]] = {}
 
-    def start(self) -> dict:
+    def start(self, channel: str) -> dict:
         with self.lock:
-            if self.session and time.time() < self.expires:
-                return self.session
-            q = urllib.parse.urlencode({
-                "appName": "web", "appVersion": "9.0.0", "deviceVersion": "124.0.0",
-                "deviceModel": "web", "deviceMake": "chrome", "deviceType": "web",
-                "clientID": self.client, "clientModelNumber": "1.0.0", "serverSideAds": "false",
-            })
-            with upstream(f"{self.BOOT}?{q}") as r:
-                d = json.load(r)
-            self.session = {
-                "stitcher": d["servers"]["stitcher"].rstrip("/"),
-                "params": d.get("stitcherParams", ""),
-                "token": d["sessionToken"],
-            }
-            self.expires = time.time() + min(int(d.get("refreshInSec", 3600)), 4 * 3600) - 60
-            return self.session
+            hit = self.sessions.get(channel)
+            if hit and time.time() < hit[1]:
+                return hit[0]
+        q = urllib.parse.urlencode({
+            "appName": "web", "appVersion": "9.0.0", "deviceVersion": "124.0.0",
+            "deviceModel": "web", "deviceMake": "chrome", "deviceType": "web",
+            "clientID": str(uuid.uuid4()), "clientModelNumber": "1.0.0", "serverSideAds": "false",
+            "channelID": channel,
+        })
+        with upstream(f"{self.BOOT}?{q}") as r:
+            d = json.load(r)
+        session = {
+            "stitcher": d["servers"]["stitcher"].rstrip("/"),
+            "params": d.get("stitcherParams", ""),
+            "token": d["sessionToken"],
+        }
+        expires = time.time() + min(int(d.get("refreshInSec", 3600)), 4 * 3600) - 60
+        with self.lock:
+            now = time.time()
+            for k in [k for k, (_, exp) in self.sessions.items() if exp < now]:
+                del self.sessions[k]
+            while len(self.sessions) >= self.MAX:
+                del self.sessions[min(self.sessions, key=lambda k: self.sessions[k][1])]
+            self.sessions[channel] = (session, expires)
+        return session
+
+    def forget(self, channel: str) -> None:
+        with self.lock:
+            self.sessions.pop(channel, None)
 
     def master_url(self, channel: str) -> str:
-        s = self.start()
+        s = self.start(channel)
         params = (s["params"] + "&" if s["params"] else "") + urllib.parse.urlencode(
             {"jwt": s["token"], "masterJWTPassthrough": "true"})
         return f"{s['stitcher']}/v2/stitch/hls/channel/{channel}/master.m3u8?{params}"
@@ -175,9 +194,16 @@ class Handler(SimpleHTTPRequestHandler):
                 return str(DATA / name)
         return super().translate_path(path)
 
-    def log_message(self, fmt, *args):
-        if not self.path.startswith("/proxy"):
-            super().log_message(fmt, *args)
+    def log_request(self, code="-", size="-"):
+        # Segment fetches are constant noise; keep only the proxy's failures,
+        # which log the upstream reason.
+        if self.path.startswith("/proxy") and str(getattr(code, "value", code)).startswith(("2", "3")):
+            return
+        super().log_request(code, size)
+
+    def log_error(self, fmt, *args):
+        target = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("u", [""])[0]
+        super().log_error(fmt + (" [%s]" % target[:200] if target else ""), *args)
 
     def end_headers(self):
         if self.path.startswith(("/proxy", "/pluto/", "/api/")):
@@ -203,7 +229,7 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.relay(PLUTO.master_url(m.group(1)), "", "")
                 except urllib.error.HTTPError as e:
                     if e.code in (401, 403):  # session went stale; start a new one
-                        PLUTO.session = None
+                        PLUTO.forget(m.group(1))
                         return self.relay(PLUTO.master_url(m.group(1)), "", "")
                     raise
         except Refused as e:
@@ -227,7 +253,7 @@ class Handler(SimpleHTTPRequestHandler):
             ctype = r.headers.get("Content-Type", "application/octet-stream")
             final = r.geturl()
             head = r.read(CHUNK)
-            if is_playlist(final, ctype, head):
+            if is_playlist(head):
                 text = (head + r.read()).decode("utf-8", "replace")
                 body = rewrite_playlist(text, final, ref, ua).encode()
                 self.send_response(200)
