@@ -4,8 +4,10 @@
 # Base pinned by tag and digest; bump both together.
 FROM python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
+# COUNTRIES: iptv-org playlist prefixes to build, e.g. us,ca,uk.
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    COUNTRIES=us
 
 WORKDIR /app
 COPY scripts/ scripts/

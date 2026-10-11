@@ -1,17 +1,18 @@
 # Signal TV Guide
 
-A browser TV guide and player for the free US channels listed in
-[iptv-org/iptv](https://github.com/iptv-org/iptv).
+A browser TV guide and player for the free channels listed in
+[iptv-org/iptv](https://github.com/iptv-org/iptv), US by default.
 
-- Every `streams/us*.m3u` playlist (broadcast, local, Pluto TV, Samsung TV Plus,
-  Plex, Roku, Tubi, Xumo, STIRR, PBS and the rest), merged into one channel list
-- Channel names, categories and logos from the [iptv-org API](https://github.com/iptv-org/api)
+- Every playlist for the chosen countries (for the US: broadcast, local,
+  Pluto TV, Samsung TV Plus, Plex, Roku, Tubi, Xumo, STIRR, PBS and the rest),
+  merged into one channel list. See [Countries](#countries)
+- Channel names, categories, logos and languages from the [iptv-org API](https://github.com/iptv-org/api)
 - Programme listings from public XMLTV feeds: [i.mjh.nz](https://i.mjh.nz/)
   for Pluto TV, Samsung TV Plus, Plex, Roku and PBS, and
   [epgshare01](https://epgshare01.online/) for cable and sports networks and
   local broadcast stations
 - Guide grid with a live now-line, channel search that also matches show titles,
-  source and category filters, favorites, and an HLS player (hls.js) that falls
+  country, source, language and category filters, favorites, and an HLS player (hls.js) that falls
   back through a channel's alternate streams when one fails
 - Google Cast (Chromecast, Google TV, Nest Hub) from Chrome or Edge, when the
   proxy is running. Streams that already have HTTPS and CORS go to the TV
@@ -62,6 +63,33 @@ It listens on 127.0.0.1 only. Use `--host 0.0.0.0` to watch from other devices
 on your network. Any static server works too (`python3 -m http.server -d web`),
 but without the proxy far fewer channels play, and Pluto channels don't play at all.
 
+## Countries
+
+```bash
+python3 scripts/build.py --countries us,ca,uk     # or COUNTRIES=us,ca,uk
+```
+
+Countries are iptv-org playlist prefixes, so the UK is `uk`. The first one
+listed owns a channel that appears in several. The page shows a country filter
+when there's more than one, and its source and language lists follow the
+chosen country. Language comes from iptv-org's feed data; channels without a
+`tvg-id` (many Pluto and Samsung ones) show under "Not tagged".
+
+Listings are matched within each channel's own country, and how many a country
+gets depends on the feeds behind it:
+
+| Country | Feeds | Channels | With listings |
+| --- | --- | --- | --- |
+| `us` | Pluto, Samsung, Plex, Roku, PBS, epgshare01 cable, sports and locals | 2,239 | 1,049 |
+| `ca` | Pluto, Samsung, Plex, epgshare01 CA2 | 341 | 227 |
+| `uk` | Pluto, Samsung, Plex, epgshare01 UK1 | 507 | 339 |
+
+Other countries work too, with the i.mjh.nz Pluto and Samsung feeds for
+whichever of those playlists they have; add an entry to `COUNTRY_FEEDS` in
+`scripts/build.py` for more. Known gaps: the UK feed abbreviates BBC One's
+regions ("BBC One E Mid HD") and the Canadian one names CBC stations by city
+("CBC Winnipeg", not "CBC Manitoba"), so those don't match yet.
+
 ## Container
 
 ```bash
@@ -70,10 +98,13 @@ docker run --rm -p 8080:8080 --read-only --tmpfs /data:uid=1000,gid=1000 signal-
 ```
 
 The image runs `serve.py` as UID 1000 with a read-only root filesystem. It
-builds the guide data into `/data` at startup (ready in about 30 s; `/healthz`
-returns 503 until then) and rebuilds it every hour. Give it about 512 MiB:
-idle use is about 25 MiB, but a rebuild that downloads every feed peaks near
-250 MiB (about 160 MiB when the epgshare01 feeds are cached).
+builds the guide data into `/data` at startup (ready in about 35 s; `/healthz`
+returns 503 until then) and rebuilds it every hour. Set `COUNTRIES` (`-e
+COUNTRIES=us,ca,uk`) to change countries. Give it 256 to 512 MiB: idle use is
+about 25 MiB, and a rebuild that downloads every feed peaks near 150 MiB for
+the US (about 180 MiB for us,ca,uk; less when the epgshare01 feeds are cached).
+The build reads only the parts of each feed and iptv-org API file that the
+playlists could use.
 
 `.github/workflows/image.yml` builds, smoke-tests and Trivy-scans the image on
 every push and PR, and on `main` pushes `ghcr.io/alanheinen/iptv-epg:sha-<commit>`.
@@ -94,12 +125,16 @@ The homelab deployment pins a digest in k8s-2025 under
 
 `scripts/build.py` matches each stream to a schedule in this order:
 
-1. Pluto TV channel ID in the stream URL (`plu-<id>`) → Pluto XMLTV ID
+Everything except step 1 stays within the stream's own country.
+
+1. Pluto TV channel ID in the stream URL (`plu-<id>`) → Pluto XMLTV ID, in its
+   own country's feed first, then any other built country's
 2. Call sign in the `tvg-id` feed (`PBS.us@KETS`) → PBS XMLTV ID
 3. Normalised channel name → the feed for the stream's own service
 4. Station call sign (`ABC.us@KRGVTV`, `CBS 9 Oklahoma City OK (KWTV-DT1)`)
    → the epgshare01 locals feed, for the broadcast, local and PBS playlists only
-5. Normalised channel name → cable, sports, then the FAST service feeds
+5. Normalised channel name → cable, sports, then the FAST service feeds of the
+   stream's country
 6. iptv-org's own guide mappings (`guides.json`) that point at a feed the
    build already downloads (i.mjh.nz, plex.tv)
 

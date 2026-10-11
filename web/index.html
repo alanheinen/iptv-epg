@@ -69,9 +69,17 @@
       <input id="q" type="search" placeholder="Search channels or shows" autocomplete="off" aria-label="Search channels or shows">
       <kbd class="hint">/</kbd>
     </div>
+    <label class="select" id="countryWrap" hidden>
+      <span class="sr-only">Country</span>
+      <select id="country" aria-label="Country"><option value="">All countries</option></select>
+    </label>
     <label class="select">
       <span class="sr-only">Source</span>
       <select id="source" aria-label="Source playlist"><option value="">All sources</option></select>
+    </label>
+    <label class="select" id="langWrap" hidden>
+      <span class="sr-only">Language</span>
+      <select id="lang" aria-label="Language"><option value="">All languages</option></select>
     </label>
     <div class="toggles" role="group" aria-label="Show only">
       <button type="button" class="toggle" id="tGuide" aria-pressed="false">Has listings</button>

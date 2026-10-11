@@ -9,7 +9,7 @@
     nowLogo: $("#nowLogo"), nowNum: $("#nowNum"), nowName: $("#nowName"), nowSrc: $("#nowSrc"), favBtn: $("#favBtn"),
     nowEyebrow: $("#nowEyebrow"), nowTitle: $("#nowTitle"), nowTime: $("#nowTime"), nowBar: $("#nowBar"), nowDesc: $("#nowDesc"),
     nextList: $("#nextList"), streams: $("#streams"),
-    q: $("#q"), source: $("#source"), tGuide: $("#tGuide"), tFav: $("#tFav"), tGeo: $("#tGeo"), jumpNow: $("#jumpNow"), cats: $("#cats"),
+    q: $("#q"), source: $("#source"), country: $("#country"), countryWrap: $("#countryWrap"), lang: $("#lang"), langWrap: $("#langWrap"), tGuide: $("#tGuide"), tFav: $("#tFav"), tGeo: $("#tGeo"), jumpNow: $("#jumpNow"), cats: $("#cats"),
     guide: $("#guide"), canvas: $("#canvas"), ticks: $("#ticks"), corner: $("#corner"), rows: $("#rows"), nowline: $("#nowline"), empty: $("#empty"),
     toast: $("#toast"), themeBtn: $("#themeBtn"), castBtn: $("#castBtn"),
   };
@@ -45,11 +45,11 @@
 
   // ------------------------------------------------------------ state
   const S = {
-    channels: [], byId: new Map(), list: [], sources: new Map(),
+    channels: [], byId: new Map(), list: [], sources: new Map(), countries: new Map(), langNames: new Map(),
     T0: 0, T1: 0, PX: 5, CH_W: 232, ROW_H: 64,
     sel: null, selProg: null, playing: null,
     favs: new Set(store.get("favs", [])),
-    f: Object.assign({ q: "", source: "", cat: "", guide: false, fav: false, geo: false }, store.get("filters", {})),
+    f: Object.assign({ q: "", country: "", source: "", lang: "", cat: "", guide: false, fav: false, geo: false }, store.get("filters", {})),
     rendered: [], renderKey: "",
   };
   S.f.q = "";
@@ -74,7 +74,11 @@
     S.built = cData.built;
     S.sources = new Map();
     S.byId = new Map();
-    cData.sources.forEach((s) => S.sources.set(s.id, s));
+    cData.sources.forEach((s) => S.sources.set(s.id, { cc: s.id.split("_")[0], ...s }));
+    // Older data has no countries or languages; it's all one country then.
+    S.countries = new Map((cData.countries || []).map((c) => [c.id, c]));
+    S.langNames = new Map((cData.languages || []).map((l) => [l.id, l.name]));
+    const multi = S.countries.size > 1;
     const now = nowMin();
     S.T0 = Math.floor((gData.from || now - 180) / 30) * 30;
     S.T1 = Math.ceil(Math.max(gData.to || 0, now + 24 * 60) / 30) * 30;
@@ -83,10 +87,12 @@
     S.channels = cData.channels.map((c, i) => {
       const progs = (gData.guide[c.id] || []).filter((p) => p[1] > S.T0 && p[0] < S.T1);
       const geo = c.streams.every((s) => (s.tags || []).some((t) => /geo/i.test(t)));
+      const cc = c.cc || [c.src.split("_")[0]];
+      const langs = c.langs || [];
       const ch = {
-        ...c, num: 101 + i, progs, geo,
-        srcLabel: (S.sources.get(c.src) || {}).label || c.src,
-        hay: [c.name, c.network, ...c.cats, ...progs.map((p) => p[2])].join(" \u0001 ").toLowerCase(),
+        ...c, num: 101 + i, progs, geo, cc, langs,
+        srcLabel: ((S.sources.get(c.src) || {}).label || c.src) + (multi ? ` ${c.src.split("_")[0].toUpperCase()}` : ""),
+        hay: [c.name, c.network, ...c.cats, ...langs.map((l) => S.langNames.get(l) || l), ...progs.map((p) => p[2])].join(" \u0001 ").toLowerCase(),
       };
       S.byId.set(c.id, ch);
       return ch;
@@ -100,10 +106,34 @@
   }
 
   // ------------------------------------------------------------ filters
+  // Country and language only show when the data has a choice to make. The
+  // source and language lists follow the chosen country.
   function buildFilters() {
-    els.source.innerHTML = `<option value="">All sources</option>` +
-      [...S.sources.values()].map((s) => `<option value="${esc(s.id)}">${esc(s.label)} (${s.count})</option>`).join("");
-    els.source.value = S.sources.has(S.f.source) ? S.f.source : "";
+    if (!S.countries.has(S.f.country)) S.f.country = "";
+    els.countryWrap.hidden = S.countries.size < 2;
+    els.country.innerHTML = `<option value="">All countries</option>` +
+      [...S.countries.values()].map((c) => `<option value="${esc(c.id)}">${esc(c.name)} (${c.count})</option>`).join("");
+    els.country.value = S.f.country;
+
+    const srcs = [...S.sources.values()].filter((s) => !S.f.country || s.cc === S.f.country);
+    if (!srcs.some((s) => s.id === S.f.source)) S.f.source = "";
+    const opt = (s) => `<option value="${esc(s.id)}">${esc(s.label)} (${s.count})</option>`;
+    els.source.innerHTML = `<option value="">All sources</option>` + (S.countries.size > 1 && !S.f.country
+      ? [...S.countries.values()].map((c) => `<optgroup label="${esc(c.name)}">${srcs.filter((s) => s.cc === c.id).map(opt).join("")}</optgroup>`).join("")
+      : srcs.map(opt).join(""));
+    els.source.value = S.f.source;
+
+    const inCountry = S.channels.filter((c) => !S.f.country || c.cc.includes(S.f.country));
+    const langs = new Map();
+    let untagged = 0;
+    inCountry.forEach((c) => { c.langs.forEach((l) => langs.set(l, (langs.get(l) || 0) + 1)); if (!c.langs.length) untagged++; });
+    const langList = [...langs].sort((a, b) => b[1] - a[1]);
+    if (S.f.lang && !(S.f.lang === "none" ? untagged : langs.has(S.f.lang))) S.f.lang = "";
+    els.langWrap.hidden = langList.length < 2;
+    els.lang.innerHTML = `<option value="">All languages</option>` +
+      langList.map(([l, n]) => `<option value="${esc(l)}">${esc(S.langNames.get(l) || l)} (${n})</option>`).join("") +
+      (untagged ? `<option value="none">Not tagged (${untagged})</option>` : "");
+    els.lang.value = S.f.lang;
 
     const counts = new Map();
     S.channels.forEach((c) => c.cats.forEach((k) => counts.set(k, (counts.get(k) || 0) + 1)));
@@ -124,7 +154,9 @@
   function applyFilters(keepScroll) {
     const q = S.f.q.trim().toLowerCase();
     S.list = S.channels.filter((c) =>
+      (!S.f.country || c.cc.includes(S.f.country)) &&
       (!S.f.source || c.src === S.f.source) &&
+      (!S.f.lang || (S.f.lang === "none" ? !c.langs.length : c.langs.includes(S.f.lang))) &&
       (!S.f.cat || c.cats.includes(S.f.cat)) &&
       (!S.f.guide || c.progs.length) &&
       (!S.f.fav || S.favs.has(c.id)) &&
@@ -142,7 +174,7 @@
     if (!S.list.length) {
       els.empty.innerHTML = S.f.fav && !S.favs.size
         ? `<strong>No favorites yet</strong><span>Tune a channel and press the star, or press F.</span>`
-        : `<strong>No channels match</strong><span>Try a different search, source or category.</span>`;
+        : `<strong>No channels match</strong><span>Try a different search or fewer filters.</span>`;
     }
   }
 
@@ -676,6 +708,8 @@
     qTimer = setTimeout(() => { S.f.q = els.q.value; applyFilters(); }, 120);
   });
   els.source.addEventListener("change", () => { S.f.source = els.source.value; applyFilters(); });
+  els.country.addEventListener("change", () => { S.f.country = els.country.value; buildFilters(); applyFilters(); });
+  els.lang.addEventListener("change", () => { S.f.lang = els.lang.value; applyFilters(); });
   els.cats.addEventListener("click", (e) => {
     const b = e.target.closest(".chip");
     if (!b) return;
