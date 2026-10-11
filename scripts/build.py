@@ -89,6 +89,48 @@ CACHE_AHEAD_H = 96
 # different programming. Names are never matched across countries.
 FALLBACK_ORDER = ["cable", "sports", "samsung", "plex", "roku", "pluto"]
 
+# Channels the feeds name too differently to match, by iptv-org tvg-id with
+# any "HD" dropped from the feed part -> (feed key, XMLTV id). The UK feed
+# abbreviates BBC One's regions ("BBC One E Mid HD"); the Canadian one names
+# CBC stations by city ("CBC Winnipeg") where iptv-org uses the province, so
+# they're keyed by call sign. Left out on purpose, because a neighbouring
+# station's schedule would be wrong: CBC New Brunswick and North (no station
+# in the feed), and BBC Four/CBeebies and BBC Three/CBBC, which switch between
+# two channels' schedules during the day.
+LISTING_TABLE = {
+    "BBCOne.uk@London": ("cable-uk", "BBC.One.Lon.HD.uk"),
+    "BBCOne.uk@ChannelIslands": ("cable-uk", "BBC.One.CI.HD.uk"),
+    "BBCOne.uk@East": ("cable-uk", "BBC.One.EastHD.uk"),
+    "BBCOne.uk@EastMidlands": ("cable-uk", "BBC.One.E.Mid.HD.uk"),
+    "BBCOne.uk@NorthEastCumbria": ("cable-uk", "BBC.One.NE.and.C.HD.uk"),
+    "BBCOne.uk@NorthWest": ("cable-uk", "BBC.One.N.West.HD.uk"),
+    "BBCOne.uk@NorthernIreland": ("cable-uk", "BBC.One.NI.HD.uk"),
+    "BBCOne.uk@Scotland": ("cable-uk", "BBC.One.ScotHD.uk"),
+    "BBCOne.uk@South": ("cable-uk", "BBC.One.Sth.HD.uk"),
+    "BBCOne.uk@SouthEast": ("cable-uk", "BBC.One.S.East.HD.uk"),
+    "BBCOne.uk@SouthWest": ("cable-uk", "BBC.One.S.West.HD.uk"),
+    "BBCOne.uk@Wales": ("cable-uk", "BBC.One.Wal.HD.uk"),
+    "BBCOne.uk@West": ("cable-uk", "BBC.One.West.HD.uk"),
+    "BBCOne.uk@WestMidlands": ("cable-uk", "BBC.One.WM.HD.uk"),
+    "BBCOne.uk@Yorkshire": ("cable-uk", "BBC.One.Yorks.HD.uk"),
+    # Without these, name matching gives the regions the national BBC Two.
+    "BBCTwo.uk@NorthernIreland": ("cable-uk", "BBC.Two.NI.HD.uk"),
+    "BBCTwo.uk@Wales": ("cable-uk", "BBC.Two.Wal.HD.uk"),
+    "BBCScotland.uk@SD": ("cable-uk", "BBCScotlandHD.uk"),
+    "CBCTelevision.ca@CBWTDT": ("cable-ca", "CBC.Winnipeg.HD.ca2"),
+    "CBCTelevision.ca@CBMTDT": ("cable-ca", "CBMT.-.CBC.Montreal.ca2"),
+    "CBCTelevision.ca@CBNTDT": ("cable-ca", "CBC.St..John\u2019s.ca2"),
+    "CBCTelevision.ca@CBHTDT": ("cable-ca", "CBC.Halifax.HD.ca2"),
+    "CBCTelevision.ca@CBCTDT": ("cable-ca", "CBCT.ca2"),
+    "CBCTelevision.ca@CBETDT": ("cable-ca", "CBC.Television-Windsor.9.ca2"),
+}
+
+
+def table_hit(tvg: str) -> tuple[str, str] | None:
+    ch, _, feed = tvg.partition("@")
+    return LISTING_TABLE.get(f"{ch}@{feed[:-2] if feed.endswith('HD') else feed}")
+
+
 # Friendly names for the services, by playlist suffix (us_pluto -> "pluto").
 SERVICE_LABELS = {
     "": "Broadcast & Cable", "local": "Local", "pluto": "Pluto TV",
@@ -525,9 +567,8 @@ def main() -> int:
         pbs_calls = {c for e in entries if e["cc"] == "us"
                      for f in [e["tvg"].partition("@")[2]] for c in (f, re.sub(r"(TV|DT\d*)$", "", f)) if c}
         mapped_ids: dict[str, set] = {}
-        for hits in mapped.values():
-            for k, sid in hits:
-                mapped_ids.setdefault(k, set()).add(sid)
+        for k, sid in [h for hits in mapped.values() for h in hits] + list(LISTING_TABLE.values()):
+            mapped_ids.setdefault(k, set()).add(sid)
 
         def keep_for(key: str):
             kind, cc = kind_of(key), key.partition("-")[2]
@@ -602,6 +643,9 @@ def main() -> int:
             for k in sorted(pluto_keys, key=lambda k: k != f"pluto-{cc}"):
                 if pid in epg_progs.get(k, {}):
                     return k, pid
+        hit = table_hit(e["tvg"])
+        if hit and hit[1] in epg_progs.get(hit[0], {}):
+            return hit
         feed = e["tvg"].partition("@")[2]
         for call in (feed, re.sub(r"(TV|DT\d*)$", "", feed)):
             if call and cc == "us" and call in epg_progs.get("pbs-us", {}):

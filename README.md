@@ -81,14 +81,16 @@ gets depends on the feeds behind it:
 | Country | Feeds | Channels | With listings |
 | --- | --- | --- | --- |
 | `us` | Pluto, Samsung, Plex, Roku, PBS, epgshare01 cable, sports and locals | 2,239 | 1,049 |
-| `ca` | Pluto, Samsung, Plex, epgshare01 CA2 | 341 | 227 |
-| `uk` | Pluto, Samsung, Plex, epgshare01 UK1 | 507 | 339 |
+| `ca` | Pluto, Samsung, Plex, epgshare01 CA2 | 341 | 233 |
+| `uk` | Pluto, Samsung, Plex, epgshare01 UK1 | 507 | 359 |
 
 Other countries work too, with the i.mjh.nz Pluto and Samsung feeds for
 whichever of those playlists they have; add an entry to `COUNTRY_FEEDS` in
-`scripts/build.py` for more. Known gaps: the UK feed abbreviates BBC One's
-regions ("BBC One E Mid HD") and the Canadian one names CBC stations by city
-("CBC Winnipeg", not "CBC Manitoba"), so those don't match yet.
+`scripts/build.py` for more. Channels the feeds name too differently to match
+(BBC One's regions, "BBC One E Mid HD"; CBC stations, which the Canadian feed
+names by city) are mapped by hand in `LISTING_TABLE`. CBC New Brunswick and
+North, and BBC Four/CBeebies and BBC Three/CBBC, have no listings: the feed has
+no matching station, or the channel switches between two schedules.
 
 ## Container
 
@@ -129,7 +131,8 @@ Everything except step 1 stays within the stream's own country.
 
 1. Pluto TV channel ID in the stream URL (`plu-<id>`) → Pluto XMLTV ID, in its
    own country's feed first, then any other built country's
-2. Call sign in the `tvg-id` feed (`PBS.us@KETS`) → PBS XMLTV ID
+2. `tvg-id` in `LISTING_TABLE` (BBC One regions, CBC stations) → that XMLTV ID,
+   then the call sign in the `tvg-id` feed (`PBS.us@KETS`) → PBS XMLTV ID
 3. Normalised channel name → the feed for the stream's own service
 4. Station call sign (`ABC.us@KRGVTV`, `CBS 9 Oklahoma City OK (KWTV-DT1)`)
    → the epgshare01 locals feed, for the broadcast, local and PBS playlists only
