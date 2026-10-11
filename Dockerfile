@@ -18,4 +18,4 @@ USER 1000:1000
 EXPOSE 8080
 VOLUME ["/data"]
 
-CMD ["python3", "scripts/serve.py", "--host", "0.0.0.0", "--port", "8080", "--data", "/data", "--refresh", "4"]
+CMD ["python3", "scripts/serve.py", "--host", "0.0.0.0", "--port", "8080", "--data", "/data", "--refresh", "1"]

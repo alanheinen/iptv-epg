@@ -38,8 +38,8 @@
     toast.t = setTimeout(() => { els.toast.hidden = true; }, 2200);
   }
 
-  async function copy(text) {
-    try { await navigator.clipboard.writeText(text); toast("Stream URL copied"); }
+  async function copy(text, note = "") {
+    try { await navigator.clipboard.writeText(text); toast("Stream URL copied" + note); }
     catch { window.prompt?.("Copy the stream URL", text); }
   }
 
@@ -62,12 +62,18 @@
   }
 
   // ------------------------------------------------------------ data
-  async function load() {
-    const [cRes, gRes] = await Promise.all([fetch("data/channels.json"), fetch("data/guide.json").catch(() => null)]);
+  async function fetchData() {
+    const [cRes, gRes] = await Promise.all([fetch("data/channels.json", { cache: "no-cache" }), fetch("data/guide.json", { cache: "no-cache" }).catch(() => null)]);
     if (!cRes.ok) throw new Error("data/channels.json is missing. Run scripts/build.py first.");
     const cData = await cRes.json();
     const gData = gRes && gRes.ok ? await gRes.json() : { guide: {}, from: 0, to: 0 };
+    return { cData, gData };
+  }
 
+  function load({ cData, gData }) {
+    S.built = cData.built;
+    S.sources = new Map();
+    S.byId = new Map();
     cData.sources.forEach((s) => S.sources.set(s.id, s));
     const now = nowMin();
     S.T0 = Math.floor((gData.from || now - 180) / 30) * 30;
@@ -165,15 +171,17 @@
     els.nowline.style.left = `${S.CH_W + xOf(nowMin()) - 1}px`;
   }
 
+  const COPY_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>`;
+
   function chanCell(c) {
     const logo = c.logo
       ? `<img class="logo-img" src="${esc(c.logo)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-i="${esc(initials(c.name))}">`
       : esc(initials(c.name));
     const star = S.favs.has(c.id) ? `<span class="star" aria-label="Favorite">★</span> ` : "";
-    return `<button type="button" class="chan" data-ch="${esc(c.id)}" title="${esc(c.name)}">
+    return `<div class="chan"><button type="button" class="chan-tune" data-ch="${esc(c.id)}" title="${esc(c.name)}">
       <span class="chan-num">${c.num}</span><span class="logo">${logo}</span>
       <span class="chan-text"><span class="chan-name">${esc(c.name)}</span><span class="chan-sub">${star}${esc(c.srcLabel)}${c.cats[0] ? " · " + esc(c.cats[0]) : ""}</span></span>
-    </button>`;
+    </button><button type="button" class="row-copy" data-copy="${esc(c.id)}" title="Copy stream URL" aria-label="Copy stream URL for ${esc(c.name)}">${COPY_ICON}</button></div>`;
   }
 
   function render(force) {
@@ -351,6 +359,24 @@
     return mixed || s.ref || s.ua ? [viaProxy] : [{ url: s.url, via: "direct" }, viaProxy];
   }
 
+  // The URL to hand to VLC or mpv. Pluto links in the playlists are refused, and
+  // some streams need a Referer or User-Agent, so with the proxy those copy as
+  // a link through this server (which only works where this server is reachable).
+  function shareUrl(s) {
+    const needsProxy = /plu-[0-9a-f]{24}|\/channel\/[0-9a-f]{24}\//.test(s.url) || s.ref || s.ua;
+    const p = S.proxy && needsProxy && routes(s).find((x) => x.via === "proxy");
+    if (p) return { url: new URL(p.url, location.href).href, note: " (through Signal's proxy)" };
+    return { url: s.url, note: "" };
+  }
+
+  function copyChannel(id) {
+    const c = S.byId.get(id);
+    if (!c) return;
+    const idx = S.playing && S.playing.ch === c.id ? S.playing.idx : 0;
+    const { url, note } = shareUrl(c.streams[idx]);
+    copy(url, note);
+  }
+
   function tune(id, idx = 0, opts = {}) {
     const c = S.byId.get(id);
     if (!c) return;
@@ -454,7 +480,9 @@
 
   // ------------------------------------------------------------ events
   els.rows.addEventListener("click", (e) => {
-    const chan = e.target.closest(".chan");
+    const cp = e.target.closest(".row-copy");
+    if (cp) { copyChannel(cp.dataset.copy); return; }
+    const chan = e.target.closest(".chan-tune");
     if (chan) { tune(chan.dataset.ch); return; }
     const prog = e.target.closest(".prog");
     if (!prog) return;
@@ -468,7 +496,7 @@
   els.streams.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
-    if (b.dataset.copy) { const c = S.byId.get(b.dataset.copy); const idx = S.playing && S.playing.ch === c.id ? S.playing.idx : 0; copy(c.streams[idx].url); return; }
+    if (b.dataset.copy) { copyChannel(b.dataset.copy); return; }
     S.bad.delete(S.byId.get(S.sel).streams[+b.dataset.s].url);
     tune(S.sel, +b.dataset.s, { keepProg: true, single: true });
   });
@@ -476,7 +504,7 @@
   els.overlayActions.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
-    if (b.dataset.copy) { copy(S.byId.get(b.dataset.copy).streams[0].url); return; }
+    if (b.dataset.copy) { copyChannel(b.dataset.copy); return; }
     if (b.dataset.act === "retry") { S.byId.get(S.sel).streams.forEach((s) => S.bad.delete(s.url)); tune(S.sel, 0, { keepProg: true }); }
     if (b.dataset.act === "play") {
       if (els.video.currentSrc || hls) { els.video.play().catch(() => {}); els.screen.classList.add("playing"); }
@@ -520,7 +548,7 @@
   });
 
   els.guide.addEventListener("keydown", (e) => {
-    if (e.target.closest(".chan") && (e.key === "Enter" || e.key === " ")) return; // native button
+    if (e.target.closest(".chan button") && (e.key === "Enter" || e.key === " ")) return; // native button
     const map = { ArrowDown: 1, ArrowUp: -1 };
     if (map[e.key]) {
       e.preventDefault();
@@ -573,7 +601,7 @@
       S.proxy = h.ok && (await h.json()).proxy === true;
     } catch { S.proxy = false; }
     try {
-      await load();
+      load(await fetchData());
     } catch (err) {
       els.meta.textContent = "Couldn't load channel data";
       els.empty.hidden = false;
@@ -594,6 +622,35 @@
     }
     // Refresh live/past styling and the progress bar every 30 seconds.
     setInterval(() => { render(true); if (S.sel) showPanel(); }, 30000);
+    // Pick up new guide data (the server rebuilds it hourly) without a reload.
+    setInterval(refresh, 10 * 60000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+  }
+
+  // Swap in newer data in place: keeps filters, selection, the channel at the
+  // top of the guide, the time in view and whatever is playing.
+  async function refresh() {
+    if (refresh.busy || Date.now() - (refresh.at || 0) < 60000) return;
+    refresh.busy = true;
+    try {
+      const data = await fetchData();
+      refresh.at = Date.now();
+      if (data.cData.built === S.built) return;
+      const g = els.guide;
+      const topRow = Math.floor(Math.max(0, g.scrollTop) / S.ROW_H);
+      const topId = S.list[topRow] && S.list[topRow].id;
+      const leftMin = S.T0 + g.scrollLeft / S.PX;
+      S.selProg = null;
+      load(data);
+      buildFilters();
+      applyFilters(true);
+      g.scrollLeft = (leftMin - S.T0) * S.PX;
+      const i = S.list.findIndex((c) => c.id === topId);
+      if (i >= 0) g.scrollTop = i * S.ROW_H;
+      render(true);
+      if (S.sel && S.byId.has(S.sel)) showPanel();
+    } catch { /* keep showing what we have; try again next time */ }
+    finally { refresh.busy = false; }
   }
 
   boot();

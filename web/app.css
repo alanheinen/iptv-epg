@@ -46,6 +46,8 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
+/* `hidden` must win over component display rules (.empty is a grid). */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   margin: 0;
@@ -221,11 +223,27 @@ kbd {
 .row.sel { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .chan {
   position: sticky; left: 0; z-index: 3; flex: none; width: var(--chan-w); height: 100%;
-  display: grid; grid-template-columns: 38px 44px minmax(0, 1fr); align-items: center; gap: 8px;
-  padding: 0 10px 0 6px; text-align: left; cursor: pointer;
-  border: 0; border-right: 1px solid var(--line); background: var(--surface);
+  border-right: 1px solid var(--line); background: var(--surface);
 }
 .chan:hover { background: var(--surface-2); }
+.chan-tune {
+  width: 100%; height: 100%;
+  display: grid; grid-template-columns: 38px 44px minmax(0, 1fr); align-items: center; gap: 8px;
+  padding: 0 10px 0 6px; text-align: left; cursor: pointer; border: 0; background: transparent;
+}
+/* Copy button: appears on hover/focus; always shown where there's no hover. */
+.row-copy {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); opacity: 0;
+}
+.row-copy svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.chan:hover .row-copy, .chan:focus-within .row-copy { opacity: 1; }
+.row-copy:hover, .row-copy:focus-visible { color: var(--accent); border-color: var(--accent); }
+@media (hover: none) {
+  .row-copy { opacity: 1; width: 26px; height: 26px; }
+  .chan-tune { padding-right: 36px; }
+}
 .row.sel .chan { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
 .chan-num { font: 600 12px/1 var(--f-mono); color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
 .row.sel .chan-num { color: var(--accent); }
@@ -293,7 +311,8 @@ kbd {
 }
 @media (max-width: 560px) {
   :root { --chan-w: 108px; --row-h: 58px; }
-  .chan { grid-template-columns: 1fr; justify-items: center; gap: 4px; padding: 6px; }
+  .chan-tune { grid-template-columns: 1fr; justify-items: center; gap: 4px; padding: 6px; }
+  .row-copy { top: 4px; right: 4px; transform: none; width: 24px; height: 24px; }
   .chan-num { text-align: center; font-size: 11px; }
   .chan-text { display: none; }
   .corner { padding: 0 8px; letter-spacing: .06em; }
