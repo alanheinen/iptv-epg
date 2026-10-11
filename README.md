@@ -9,7 +9,7 @@ A browser TV guide and player for the free channels listed in
 - Channel names, categories, logos and languages from the [iptv-org API](https://github.com/iptv-org/api)
 - Programme listings from public XMLTV feeds: [i.mjh.nz](https://i.mjh.nz/)
   for Pluto TV, Samsung TV Plus, Plex, Roku and PBS, and
-  [epgshare01](https://epgshare01.online/) for cable and sports networks and
+  [epgshare01](https://epgshare01.online/) for cable networks (sports ones included) and
   local broadcast stations
 - Guide grid with a live now-line, channel search that also matches show titles,
   country, source, language and category filters, favorites, and an HLS player (hls.js) that falls
@@ -80,7 +80,7 @@ gets depends on the feeds behind it:
 
 | Country | Feeds | Channels | With listings |
 | --- | --- | --- | --- |
-| `us` | Pluto, Samsung, Plex, Roku, PBS, epgshare01 cable, sports and locals | 2,239 | 1,049 |
+| `us` | Pluto, Samsung, Plex, Roku, PBS, epgshare01 cable and locals | 2,239 | 1,049 |
 | `ca` | Pluto, Samsung, Plex, epgshare01 CA2 | 341 | 233 |
 | `uk` | Pluto, Samsung, Plex, epgshare01 UK1 | 507 | 359 |
 
@@ -136,7 +136,7 @@ Everything except step 1 stays within the stream's own country.
 3. Normalised channel name → the feed for the stream's own service
 4. Station call sign (`ABC.us@KRGVTV`, `CBS 9 Oklahoma City OK (KWTV-DT1)`)
    → the epgshare01 locals feed, for the broadcast, local and PBS playlists only
-5. Normalised channel name → cable, sports, then the FAST service feeds of the
+5. Normalised channel name → cable, then the FAST service feeds of the
    stream's country
 6. iptv-org's own guide mappings (`guides.json`) that point at a feed the
    build already downloads (i.mjh.nz, plex.tv)

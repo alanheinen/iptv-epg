@@ -55,10 +55,11 @@ COUNTRY_FEEDS = {
         "plex": (MJH + "Plex/us.xml.gz", ["us_plex"]),
         "roku": (MJH + "Roku/all.xml.gz", ["us_roku"]),
         "pbs": (MJH + "PBS/all.xml.gz", ["us_pbs"]),
-        # Gracenote-derived listings: cable and satellite networks, sports
-        # networks, and every US local station keyed by call sign (KABC-DT...).
+        # Gracenote-derived listings: cable and satellite networks (ESPN and
+        # the other sports networks too), and every US local station keyed by
+        # call sign (KABC-DT...). epgshare01's US_SPORTS1 is left out: it lists
+        # per-team game feeds for paid packages, which no iptv-org channel is.
         "cable": (EPGSHARE + "US2.xml.gz", ["us"]),
-        "sports": (EPGSHARE + "US_SPORTS1.xml.gz", []),
         "locals": (EPGSHARE + "US_LOCALS1.xml.gz", ["us_local"]),
     },
     "ca": {
@@ -81,13 +82,13 @@ MJH_REGION = {"uk": "gb"}
 # haven't changed, reuses what it kept from the last download (see FeedCache).
 # They also run days ahead, so the cache keeps a longer window than the guide
 # shows.
-CACHED_KINDS = {"cable", "sports", "locals"}
+CACHED_KINDS = {"cable", "locals"}
 CACHE_AHEAD_H = 96
 
 # Name-matching order after a channel's own feed, within its own country:
 # broadcast schedules before the FAST services, whose same-named channels run
 # different programming. Names are never matched across countries.
-FALLBACK_ORDER = ["cable", "sports", "samsung", "plex", "roku", "pluto"]
+FALLBACK_ORDER = ["cable", "samsung", "plex", "roku", "pluto"]
 
 # Channels the feeds name too differently to match, by iptv-org tvg-id with
 # any "HD" dropped from the feed part -> (feed key, XMLTV id). The UK feed
