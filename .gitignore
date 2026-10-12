@@ -2,3 +2,4 @@
 web/data/
 __pycache__/
 *.pyc
+data/

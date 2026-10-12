@@ -1,69 +1,117 @@
 # Signal TV Guide
 
-A browser TV guide and player for the free channels listed in
-[iptv-org/iptv](https://github.com/iptv-org/iptv), US by default.
+A self-hosted TV guide and player for the free, publicly listed channels in
+[iptv-org/iptv](https://github.com/iptv-org/iptv), with programme listings for
+the channels that have them.
 
-- Every playlist for the chosen countries (for the US: broadcast, local,
-  Pluto TV, Samsung TV Plus, Plex, Roku, Tubi, Xumo, STIRR, PBS and the rest),
-  merged into one channel list. See [Countries](#countries)
-- Channel names, categories, logos and languages from the [iptv-org API](https://github.com/iptv-org/api)
-- Programme listings from public XMLTV feeds: [i.mjh.nz](https://i.mjh.nz/)
-  for Pluto TV, Samsung TV Plus, Plex, Roku and PBS, and
-  [epgshare01](https://epgshare01.online/) for cable networks (sports ones included) and
-  local broadcast stations
-- Guide grid with a live now-line, channel search that also matches show titles,
-  country, source, language and category filters, favorites, and an HLS player (hls.js) that falls
-  back through a channel's alternate streams when one fails
-- Google Cast (Chromecast, Google TV, Nest Hub) from Chrome or Edge, when the
-  proxy is running. Streams that already have HTTPS and CORS go to the TV
-  directly; the rest, and Pluto, go through the proxy, so the TV must be able
-  to resolve and reach the server's hostname. The cast button stays visible
-  (dimmed) when Chrome has found no devices; clicking it opens Chrome's Cast
-  picker, which searches again
-- A copy button on every channel row for the stream URL, to open it in VLC or
-  mpv. Pluto channels and streams that need special headers copy as a link
-  through the proxy, since their raw URLs don't play on their own
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+  <img alt="Signal TV Guide: a channel guide grid with the current programme's details and a player" src="docs/screenshot-light.png">
+</picture>
+
+## Why
+
+iptv-org collects thousands of free, legal streams: broadcast and local
+stations, and the free ad-supported services (Pluto TV, Samsung TV Plus, Plex,
+Roku and more). They come as M3U playlists, which leave a lot to do: there's no
+schedule, many streams won't play in a browser, and finding something to watch
+means scrolling a list of names.
+
+Signal turns those playlists into something closer to a TV:
+
+- **A real guide.** A scrolling grid with a live "now" line, built from public
+  XMLTV feeds and matched to the channels for you. For the US, about half of
+  the 2,200+ channels have listings, including local stations by call sign.
+- **A player that copes.** It falls back through a channel's alternate
+  streams when one fails, and a small built-in proxy plays streams a browser
+  would otherwise refuse (Pluto TV, CORS, required headers).
+- **Nothing to configure.** Pick the countries; the guide rebuilds itself
+  every hour.
+
+It doesn't host or re-broadcast anything. Every stream comes from the public
+links in iptv-org, played from your own machine.
+
+## Features
+
+- Every iptv-org playlist for the countries you choose, merged into one
+  numbered channel list, with names, logos, categories and languages from the
+  [iptv-org API](https://github.com/iptv-org/api)
+- Listings from [i.mjh.nz](https://i.mjh.nz/) (Pluto TV, Samsung TV Plus, Plex,
+  Roku, PBS) and [epgshare01](https://epgshare01.online/) (cable networks and
+  US local stations), 3 hours back to about 30 hours ahead
+- Search across channel names and show titles; filters for country, source,
+  language and category; "has listings", favorites and "hide geo-blocked"
+- An HLS player ([hls.js](https://github.com/video-dev/hls.js)) with stream
+  fallback, and a copy button on every row to open a stream in VLC or mpv
+- Casting to Chromecast, Google TV and Nest Hub from Chrome or Edge
+- Light and dark themes, keyboard control, and a layout that works on phones
+- Standard-library Python only: no packages to install, ~25 MiB idle
+
+## Quick start
+
+With Docker:
+
+```bash
+git clone https://github.com/alanheinen/iptv-epg.git
+cd iptv-epg
+docker compose up -d
+```
+
+Then open <http://localhost:8080>. The first guide build takes about a minute.
+
+Or with nothing but Python 3.9+:
+
+```bash
+python3 scripts/serve.py --data data --refresh 1
+```
 
 ## Install
 
-Every method runs the same thing: `scripts/serve.py`, which serves the page,
-runs the stream proxy, and rebuilds the guide data at startup and every hour.
-The first build takes about a minute. Each one listens on this machine only
-until you change one setting, and each takes the countries to build
-(`us` by default; see [Countries](#countries)).
+Every method runs the same server, `scripts/serve.py`, which serves the page,
+runs the stream proxy and rebuilds the guide data at startup and every hour.
+Each listens on the machine it runs on only, until you change one setting.
 
-**Keep it off the internet.** Serve it on your own network at most: exposed
-publicly, the stream proxy is an open relay for anyone's traffic.
+> **Keep it off the internet.** Serve it on your own network at most. Exposed
+> publicly, the stream proxy is an open relay for anyone's traffic. See
+> [SECURITY.md](SECURITY.md).
 
-| | Needs | Opens it to your network |
+| Method | Needs | Open it to your network with |
 | --- | --- | --- |
 | [Docker](#docker) | Docker with Compose | `ports: "8080:8080"` in `docker-compose.yml` |
-| [Kubernetes](#kubernetes) | a cluster, `kubectl` | an Ingress or Service of your choice |
-| [Linux](#linux-systemd) | Python 3.9+, systemd | `HOST=0.0.0.0` in `/etc/signal-tv.env` |
-| [Windows](#windows) | Python 3.9+ from python.org | `-Lan` (administrator PowerShell) |
+| [Kubernetes](#kubernetes) | a cluster and `kubectl` | an Ingress, or a Service type of your choice |
+| [Linux](#linux-systemd) | Python 3.9+ and systemd | `HOST=0.0.0.0` in `/etc/signal-tv.env` |
+| [Windows](#windows) | Python 3.9+ from python.org | `-Lan`, from an administrator PowerShell |
 
-Memory: about 25 MiB idle; a rebuild peaks near 150 MiB for the US and
-180 MiB for us,ca,uk. Allow 256 to 512 MiB.
+Allow 256 to 512 MiB of memory: about 25 MiB idle, peaking near 150 MiB for
+the US during the hourly rebuild (180 MiB for `us,ca,uk`).
 
 ### Docker
 
 ```bash
-docker compose up -d        # http://localhost:8080; docker compose ps shows "healthy" when ready
+docker compose up -d                              # start
+docker compose ps                                 # "healthy" once the guide is built
+docker compose pull && docker compose up -d       # update
+docker compose down                               # stop
 ```
 
-[`docker-compose.yml`](docker-compose.yml) uses `ghcr.io/alanheinen/iptv-epg:latest`,
-or builds it from the checkout if it can't pull (`--build` always builds).
-Set `COUNTRIES` there. It runs read-only as UID 1000 with no capabilities, and
-keeps the feed cache in a named volume, so a restart is ready in seconds.
-Update with `docker compose pull && docker compose up -d`.
+[`docker-compose.yml`](docker-compose.yml) runs the published image,
+`ghcr.io/alanheinen/iptv-epg:latest`, read-only, as UID 1000, with no
+capabilities, and keeps the feed cache in a named volume so restarts are ready
+in seconds. Set `COUNTRIES` there. `docker compose up -d --build` builds the
+image from your checkout instead.
 
 Without Compose:
 
 ```bash
-docker run -d --name signal-tv --restart unless-stopped -p 127.0.0.1:8080:8080 \
-  -e COUNTRIES=us --read-only --cap-drop ALL -v signal-tv-data:/data \
+docker run -d --name signal-tv --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 -e COUNTRIES=us \
+  --read-only --cap-drop ALL -v signal-tv-data:/data \
   ghcr.io/alanheinen/iptv-epg:latest
 ```
+
+The image is built for `linux/amd64`. Each build on `main` is tagged
+`sha-<commit>` as well as `latest`; pin one of those, or its digest, if you
+don't want updates to arrive on their own.
 
 ### Kubernetes
 
@@ -72,31 +120,50 @@ kubectl apply -k deploy/kubernetes
 kubectl -n signal-tv port-forward svc/signal-tv 8080:80     # http://localhost:8080
 ```
 
-[`deploy/kubernetes`](deploy/kubernetes) is a Kustomize base: a `signal-tv`
-namespace (Pod Security "restricted"), a one-replica Deployment and a Service.
-Set `COUNTRIES` in `deployment.yaml` and pin the image in
-`kustomization.yaml` (`newTag: sha-<commit>` or a digest) rather than following
-`latest`. `ingress.yaml` is a starting point for reaching it from your
-network; add it to the resources once its host, class and TLS fit your
-cluster. Casting needs the page on HTTPS.
+[`deploy/kubernetes`](deploy/kubernetes) is a Kustomize base:
+
+- a `signal-tv` namespace with Pod Security "restricted"
+- a one-replica Deployment: non-root, read-only root filesystem, no
+  capabilities, and a readiness probe that holds traffic until the guide is
+  built
+- a Service
+
+Before you deploy:
+
+- Set `COUNTRIES` in `deployment.yaml`.
+- Pin the image in `kustomization.yaml` (`newTag: sha-<commit>`, or a digest)
+  rather than following `latest`.
+- To reach it from your network, fill in [`ingress.yaml`](deploy/kubernetes/ingress.yaml)
+  with your host, ingress class and TLS, then add it to the resources.
+  Casting needs the page on HTTPS.
+
+Keep it to one replica: each pod builds its own guide, and Pluto sessions
+live in the pod.
 
 ### Linux (systemd)
 
 ```bash
-sudo deploy/linux/install.sh                 # http://127.0.0.1:8080
-sudo deploy/linux/install.sh --uninstall
+git clone https://github.com/alanheinen/iptv-epg.git
+sudo iptv-epg/deploy/linux/install.sh                 # install or update
+sudo iptv-epg/deploy/linux/install.sh --uninstall     # remove
 ```
 
 The script copies the app to `/opt/signal-tv` and installs
-[`signal-tv.service`](deploy/linux/signal-tv.service), which runs as a
-throwaway system user (`DynamicUser`) in a tight sandbox, keeps its data in
-`/var/lib/signal-tv`, and restarts on failure. Settings (`COUNTRIES`, `HOST`,
-`PORT`) are in `/etc/signal-tv.env`, written on first install and kept after
-that; `sudo systemctl restart signal-tv` after editing it. Logs:
-`journalctl -u signal-tv`. To update, pull the repository and run the script
-again.
+[`signal-tv.service`](deploy/linux/signal-tv.service):
+
+- It runs as a throwaway system user (`DynamicUser`), in a tight sandbox
+  (`systemd-analyze security` rates it 1.5, "OK").
+- Its data lives in `/var/lib/signal-tv`.
+- It restarts on failure, with memory capped at 512 MiB.
+
+Settings live in `/etc/signal-tv.env` (`COUNTRIES`, `HOST`, `PORT`). The script
+writes that file on first install and never overwrites it after that. Restart
+after editing it with `sudo systemctl restart signal-tv`. Logs:
+`journalctl -u signal-tv`. To update, `git pull` and run the script again.
 
 ### Windows
+
+From PowerShell, in the cloned or downloaded repository:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File deploy\windows\install.ps1 -Countries us
@@ -104,132 +171,162 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\install.ps1 -Uninstall
 ```
 
 [`install.ps1`](deploy/windows/install.ps1) copies the app to
-`%LOCALAPPDATA%\SignalTV` and registers a scheduled task, "Signal TV Guide",
-that runs it with `pythonw.exe` (no console window) whenever you log on, and
-starts it now. No administrator rights needed, except for `-Lan`, which
-listens on every interface and adds a Windows Firewall rule for Private
-networks only. Logs are in `%LOCALAPPDATA%\SignalTV\signal-tv.log`. Run it
-again to update or to change `-Countries`, `-Port` or `-Lan`; `-WhatIf` shows
-what it would do.
+`%LOCALAPPDATA%\SignalTV` and registers a scheduled task, "Signal TV Guide". The
+task runs the app with `pythonw.exe`, so there's no console window, whenever you
+log on. The script also starts it right away.
+
+- **Admin rights:** not needed, except for `-Lan`. That option listens on every
+  interface and adds a Windows Firewall rule for Private networks only.
+- **Logs:** `%LOCALAPPDATA%\SignalTV\signal-tv.log`.
+- **Changing settings:** run it again with new `-Countries`, `-Port` or `-Lan`.
+  `-WhatIf` shows what it would do.
+
+Python must come from [python.org](https://www.python.org/downloads/). The
+Microsoft Store's `python.exe` placeholder isn't Python.
 
 ### From a checkout
 
-```bash
-python3 scripts/build.py          # writes web/data/channels.json and guide.json (~30 s)
-python3 scripts/serve.py          # http://127.0.0.1:8080
-```
-
-Or `python3 scripts/serve.py --data DIR --refresh 1` to rebuild hourly as the
-services do. Needs only Python 3.9+ (standard library). The listings cover 3 hours back to
-30 hours ahead, but some feeds run short (Samsung TV Plus is often only 4 to
-10 hours ahead), so re-run the build every hour or two. An open page picks up
-new data by itself within 10 minutes.
-
-The epgshare01 feeds change about once a day and the locals feed is ~60 MB, so
-the build keeps what it needs from them in `feed-cache.json` and re-downloads
-only when they change (`If-Modified-Since`). A new iptv-org channel can only
-match a cached feed after its next change upstream.
-
-`serve.py` serves the app plus a small stream proxy, and the page uses it
-automatically when it's there. The proxy:
-
-- starts a Pluto TV web session per channel, because iptv-org's Pluto links
-  are mostly refused ("channel not permitted for partner") and Pluto rejects
-  other origins. A Pluto session plays one channel at a time, so sharing one
-  would let two viewers on different channels knock each other off
-- retries CORS-blocked streams server-side
-- sends the Referer / User-Agent some streams need
-- refuses private, loopback and link-local targets, so it can't reach your LAN
-- tells playlists from other files by their content (`#EXTM3U`), never the
-  Content-Type: Pluto labels its AES keys as playlists
-
-In the browser it's a fallback: a stream is tried directly first and goes
-through the proxy only when it has to (Pluto, plain HTTP on an HTTPS page,
-required headers, or a failed direct attempt). Casting follows the same rule.
-Proxy failures are logged with the upstream URL; successful fetches aren't.
-
-It listens on 127.0.0.1 only. Use `--host 0.0.0.0` to watch from other devices
-on your network. Any static server works too (`python3 -m http.server -d web`),
-but without the proxy far fewer channels play, and Pluto channels don't play at all.
-
-## Countries
+For development, or to try it without installing anything:
 
 ```bash
-python3 scripts/build.py --countries us,ca,uk     # or COUNTRIES=us,ca,uk
+python3 scripts/build.py --countries us     # writes web/data/ (about a minute)
+python3 scripts/serve.py                    # http://127.0.0.1:8080
 ```
 
-Countries are iptv-org playlist prefixes, so the UK is `uk`. The first one
-listed owns a channel that appears in several. The page shows a country filter
-when there's more than one, and its source and language lists follow the
-chosen country. Language comes from iptv-org's feed data; channels without a
-`tvg-id` (many Pluto and Samsung ones) show under "Not tagged".
+## Configuration
 
-Listings are matched within each channel's own country, and how many a country
-gets depends on the feeds behind it:
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `COUNTRIES` / `--countries` | `us` | iptv-org playlist prefixes to build, comma-separated. The UK is `uk`. |
+| `--host` | `127.0.0.1` | Address to listen on. `0.0.0.0` for your whole network. |
+| `--port` | `8080` | Port to listen on. |
+| `--data` | `web/data` | Where the guide data and feed cache are kept. |
+| `--refresh` | `0` (never) | Rebuild the guide every N hours. Every install method uses `1`. |
+| `--log` | console | Append output to a file, rotated at about 5 MB. |
 
-| Country | Feeds | Channels | With listings |
+[docs/configuration.md](docs/configuration.md) covers every option, where each
+install method keeps them, and how to add a country.
+
+### Countries
+
+How many channels get listings depends on the feeds behind each country:
+
+| Country | Listings feeds | Channels | With listings |
 | --- | --- | --- | --- |
-| `us` | Pluto, Samsung, Plex, Roku, PBS, epgshare01 cable and locals | 2,239 | 1,049 |
-| `ca` | Pluto, Samsung, Plex, epgshare01 CA2 | 341 | 233 |
-| `uk` | Pluto, Samsung, Plex, epgshare01 UK1 | 507 | 359 |
+| `us` | Pluto, Samsung, Plex, Roku, PBS, epgshare01 cable and locals | ~2,250 | ~1,060 |
+| `ca` | Pluto, Samsung, Plex, epgshare01 CA2 | ~340 | ~230 |
+| `uk` | Pluto, Samsung, Plex, epgshare01 UK1 | ~510 | ~360 |
 
-Other countries work too, with the i.mjh.nz Pluto and Samsung feeds for
-whichever of those playlists they have; add an entry to `COUNTRY_FEEDS` in
-`scripts/build.py` for more. Channels the feeds name too differently to match
-(BBC One's regions, "BBC One E Mid HD"; CBC stations, which the Canadian feed
-names by city) are mapped by hand in `LISTING_TABLE`. CBC New Brunswick and
-North, and BBC Four/CBeebies and BBC Three/CBBC, have no listings: the feed has
-no matching station, or the channel switches between two schedules.
+Other countries work too, getting the Pluto and Samsung listings for whichever
+of those playlists they have. With more than one country, the page shows a
+country filter, and the source and language lists follow it.
 
-## Image
+## Using it
 
-`.github/workflows/image.yml` builds, smoke-tests and Trivy-scans the image on
-every push and PR, and on `main` pushes `ghcr.io/alanheinen/iptv-epg:sha-<commit>`
-and `:latest`. The build reads only the parts of each feed and iptv-org API
-file that the playlists could use, which keeps its memory low. The homelab
-deployment pins a digest in k8s-2025 under `config/applications/signal-tv/`.
-
-## Keys
+- **Watch:** click a channel or a programme. If a stream fails, the player
+  moves on to the channel's next stream and says why when none play.
+- **Find something:** search matches channel names, networks, languages and
+  show titles across the whole guide.
+- **Favorites:** the star in the panel, or `F`. Favorites, filters and your
+  last channel are remembered in the browser.
+- **Copy a stream:** hover a row and use the copy button. Pluto channels and
+  streams that need special headers copy as a link through the proxy, since
+  their raw URLs don't play on their own.
+- **Cast:** in Chrome or Edge, the cast button sends the channel to a
+  Chromecast, Google TV or Nest Hub. When no TVs are found it's dimmed, and
+  clicking it searches again.
 
 | Key | Action |
 | --- | --- |
 | `[` / `]` | Previous / next channel |
+| `↑` / `↓` | Move through the channel list |
+| `←` / `→` | Scroll the guide by half an hour |
+| `Enter` | Tune the selected channel |
 | `/` | Search |
 | `F` | Toggle favorite |
 | `N` | Jump to now |
-| `↑` `↓` `←` `→` `Enter` | Move around the guide, tune the selected channel |
 
-## How listings are matched
+## How it works
 
-`scripts/build.py` matches each stream to a schedule in this order:
+```
+iptv-org playlists ──┐
+iptv-org API ────────┼──► build.py ──► channels.json ──┐
+XMLTV listings feeds ┘     (hourly)    guide.json      ├──► serve.py ──► browser
+                                                       │    (page, data,
+                     stream hosts ◄── stream proxy ◄───┘     proxy, Pluto)
+```
 
-Everything except step 1 stays within the stream's own country.
+`scripts/build.py` downloads the playlists, the channel metadata and the
+listings feeds, and matches each channel to a schedule:
 
-1. Pluto TV channel ID in the stream URL (`plu-<id>`) → Pluto XMLTV ID, in its
-   own country's feed first, then any other built country's
-2. `tvg-id` in `LISTING_TABLE` (BBC One regions, CBC stations) → that XMLTV ID,
-   then the call sign in the `tvg-id` feed (`PBS.us@KETS`) → PBS XMLTV ID
-3. Normalised channel name → the feed for the stream's own service
-4. Station call sign (`ABC.us@KRGVTV`, `CBS 9 Oklahoma City OK (KWTV-DT1)`)
-   → the epgshare01 locals feed, for the broadcast, local and PBS playlists only
-5. Normalised channel name → cable, then the FAST service feeds of the
-   stream's country
-6. iptv-org's own guide mappings (`guides.json`) that point at a feed the
-   build already downloads (i.mjh.nz, plex.tv)
+1. Pluto ids
+2. a short hand-made table (BBC One regions, CBC stations)
+3. PBS and local-station call signs
+4. channel names
+5. iptv-org's own guide mappings
 
-Step 4 is deliberately strict, because a wrong schedule is worse than none.
-The locals feed has each station's main channel only, so subchannels
-(`-DT2`, `57.2`) aren't matched. The FAST services' station-branded channels
-are mostly news or spin-offs ("WBTV Nikita"), not the broadcast. When several
-channels land on one station, only one plainly named after it keeps the match.
+The call-sign matching is deliberately strict, because a wrong schedule is
+worse than none. The big feeds are cached and re-downloaded only when they
+change.
 
-Channels with no match still play; the guide shows "No listings" for them.
-Most of what's left is community access, foreign, music and niche FAST
-channels that no public XMLTV feed covers.
+`scripts/serve.py` serves the page and data, and proxies the streams that need
+it. The browser always tries a stream directly first, and uses the proxy only
+for Pluto, plain HTTP on an HTTPS page, required headers, or after a direct
+attempt fails.
+
+[docs/how-it-works.md](docs/how-it-works.md) has the details: the matching
+rules, the data formats, the proxy, Pluto sessions, casting and memory use.
+
+## Troubleshooting
+
+The short version:
+
+- **No channels yet:** the first build takes about a minute.
+- **A channel won't play:** many iptv-org streams are geo-blocked or offline;
+  try "Hide geo-blocked" or another of the channel's streams.
+- **Casting fails:** the TV must be able to reach the server's hostname.
+
+[docs/troubleshooting.md](docs/troubleshooting.md) covers these and more.
 
 ## Limits
 
-Streams in iptv-org are third-party and unverified. Many are geo-blocked, offline,
-or refuse browser playback (CORS), and some need custom HTTP headers a browser
-can't send. When a channel won't play, the player says why and offers the stream
-URL for VLC or mpv. NSFW channels are excluded.
+- Streams are third-party and unverified. Many are geo-blocked, go offline, or
+  refuse browser playback. iptv-org's lists change daily, and so does what
+  plays.
+- About half the channels have no listings, mostly community, foreign-language,
+  music and niche channels that no public XMLTV feed covers. They still play.
+- NSFW channels are excluded.
+- Pluto TV playback relies on starting web sessions the way Pluto's own site
+  does. It can break whenever Pluto changes that.
+
+## Contributing
+
+Issues and pull requests are welcome. The code is three files of
+standard-library Python and plain JavaScript, with no build step:
+
+- `scripts/build.py`: guide data
+- `scripts/serve.py`: server and proxy
+- `web/app.js`: the page
+
+Useful places to start:
+
+- **Add a country's listings:** an entry in `COUNTRY_FEEDS` in
+  `scripts/build.py` (see [docs/configuration.md](docs/configuration.md#adding-a-country))
+- **Fix a channel that should match but doesn't:** an entry in `LISTING_TABLE`
+- **Wrong channel data or logos:** these come from iptv-org; fix them
+  upstream in [iptv-org/database](https://github.com/iptv-org/database)
+
+Please check a change with a full build (`python3 scripts/build.py --countries us,ca,uk`)
+and by watching a few channels in the browser.
+
+## Credits
+
+- [iptv-org](https://github.com/iptv-org) for the channel lists and metadata
+- [i.mjh.nz](https://i.mjh.nz/) and [epgshare01](https://epgshare01.online/)
+  for the XMLTV listings
+- [hls.js](https://github.com/video-dev/hls.js) for HLS playback
+
+## License
+
+[MIT](LICENSE). The channel data, listings and streams belong to their
+respective owners and are subject to their own terms.

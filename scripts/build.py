@@ -142,6 +142,9 @@ SERVICE_LABELS = {
     "amagi": "Amagi", "frequency": "Frequency", "wowza": "Wowza",
     "uplynk": "Uplynk", "3abn": "3ABN", "30a": "30A", "bbc": "BBC",
     "stingray": "Stingray", "rakuten": "Rakuten TV", "sportstribal": "Sports Tribal",
+    "afrolandtv": "AfroLandTV", "canelatv": "Canela TV", "cineversetv": "Cineverse",
+    "glewedtv": "GlewedTV", "klowdtv": "KlowdTV", "malimartv": "Malimar TV", "sofast": "SoFast",
+    "ssh101": "SSH101", "vegasplus": "Vegas Plus", "wcetv": "WCE TV", "wfmz": "WFMZ",
 }
 
 # Used only when the GitHub API can't list the playlists.
@@ -177,7 +180,8 @@ WINDOW_BEFORE_H = 3
 WINDOW_AFTER_H = 30
 DESC_MAX = 320
 
-UA = "iptv-epg-builder/1.0 (+https://github.com/iptv-org/iptv)"
+# Names the project, so the feed operators can see who is fetching.
+UA = "signal-tv-guide/1.0 (+https://github.com/alanheinen/iptv-epg)"
 
 
 def log(*a):

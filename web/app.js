@@ -91,6 +91,7 @@
       const langs = c.langs || [];
       const ch = {
         ...c, num: 101 + i, progs, geo, cc, langs,
+        svcLabel: (S.sources.get(c.src) || {}).label || c.src,
         srcLabel: ((S.sources.get(c.src) || {}).label || c.src) + (multi ? ` ${c.src.split("_")[0].toUpperCase()}` : ""),
         hay: [c.name, c.network, ...c.cats, ...langs.map((l) => S.langNames.get(l) || l), ...progs.map((p) => p[2])].join(" \u0001 ").toLowerCase(),
       };
@@ -307,7 +308,7 @@
     els.nowNum.textContent = `CH ${c.num}`;
     els.nowName.textContent = c.name;
     els.nowName.title = c.name;
-    els.nowSrc.textContent = [c.srcLabel, c.network && c.network !== c.srcLabel ? c.network : "", c.cats.join(", ")].filter(Boolean).join(" · ");
+    els.nowSrc.textContent = [c.srcLabel, c.network && c.network !== c.svcLabel ? c.network : "", c.cats.join(", ")].filter(Boolean).join(" · ");
     els.favBtn.disabled = false;
     const fav = S.favs.has(c.id);
     els.favBtn.setAttribute("aria-pressed", fav);

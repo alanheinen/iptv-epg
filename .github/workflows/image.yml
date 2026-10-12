@@ -1,11 +1,9 @@
 # Builds the container image, gates it on Trivy, and on main pushes it to
 # ghcr.io/alanheinen/iptv-epg with an SBOM and BuildKit provenance.
 #
-# Same shape as k8s-2025's image workflows (meshcentral.yml): actions pinned
-# to commit SHAs because this pushes images that run in the cluster. The
-# cluster runs a digest pinned in k8s-2025
-# (config/applications/signal-tv/signal-tv.yaml); moving it to a new build is
-# a reviewed change there, not something this workflow does.
+# Actions are pinned to commit SHAs because this pushes images people run.
+# Tags: sha-<commit> for every main build (pin these, or the digest, for
+# deployments that must not change under you) and latest.
 name: image
 
 on:
@@ -100,5 +98,5 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           ref="${IMAGE}:sha-${GITHUB_SHA}@${DIGEST}"
-          echo "Pushed \`${ref}\`. Deploy it by pinning this ref in k8s-2025 config/applications/signal-tv/signal-tv.yaml." >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed \`${ref}\` (also tagged latest)." >> "$GITHUB_STEP_SUMMARY"
           echo "$ref"
