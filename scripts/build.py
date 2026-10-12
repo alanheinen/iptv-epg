@@ -184,6 +184,19 @@ def log(*a):
     print(*a, file=sys.stderr, flush=True)
 
 
+def replace(tmp: Path, dst: Path) -> None:
+    """Rename tmp over dst. Windows refuses while the server has dst open for
+    a request, so retry for a few seconds there."""
+    for attempt in range(50):
+        try:
+            tmp.replace(dst)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == 49:
+                raise
+            time.sleep(0.1)
+
+
 def fetch(url: str, timeout: int = 90) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     for attempt in range(3):
@@ -398,7 +411,7 @@ class FeedCache:
     def __init__(self, path: Path):
         self.path = path
         try:
-            self.data = json.loads(path.read_text())
+            self.data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             self.data = {}
 
@@ -427,8 +440,8 @@ class FeedCache:
 
     def save(self) -> None:
         tmp = self.path.with_name(f".{self.path.name}.tmp")
-        tmp.write_text(json.dumps(self.data, separators=(",", ":"), ensure_ascii=False))
-        tmp.replace(self.path)
+        tmp.write_text(json.dumps(self.data, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+        replace(tmp, self.path)
 
 
 def load_feed(key: str, url: str, lo: int, hi: int, cache: FeedCache, keep=None):
@@ -467,6 +480,9 @@ def load_feed(key: str, url: str, lo: int, hi: int, cache: FeedCache, keep=None)
 # ---------------------------------------------------------------- build
 
 def main() -> int:
+    # A Windows console's code page can't print every channel name.
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(errors="replace")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "web" / "data"))
     ap.add_argument("--no-epg", action="store_true", help="skip programme data")
@@ -776,8 +792,8 @@ def main() -> int:
     def write(name: str, obj) -> None:
         # Write then rename, so a server reading the directory never sees half a file.
         tmp = out / f".{name}.tmp"
-        tmp.write_text(json.dumps(obj, separators=(",", ":"), ensure_ascii=False))
-        tmp.replace(out / name)
+        tmp.write_text(json.dumps(obj, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+        replace(tmp, out / name)
 
     write("channels.json", {
         "built": built,

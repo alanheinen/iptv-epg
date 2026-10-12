@@ -21,7 +21,9 @@ you pass --host. Standard library only.
 
 With --data DIR the guide data is served from DIR instead of web/data, and
 with --refresh HOURS the server rebuilds it (scripts/build.py) at startup and
-on that interval, which is how the container keeps its listings current.
+on that interval, which is how every deployment keeps its listings current.
+--countries picks the countries for those rebuilds (or set COUNTRIES), and
+--log FILE sends all output to a file, for running without a console.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import os
 import re
 import socket
 import subprocess
@@ -182,6 +185,13 @@ PLUTO = Pluto()
 
 class Handler(SimpleHTTPRequestHandler):
     server_version = "SignalGuide/1.0"
+    # Fixed types: on Windows, mimetypes reads the registry, which can map
+    # .js to text/plain and break the page.
+    extensions_map = {
+        "": "application/octet-stream", ".html": "text/html; charset=utf-8",
+        ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+        ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
+    }
 
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(WEB), **kw)
@@ -282,7 +292,8 @@ def refresher(hours: float) -> None:
     so the parser's memory is returned after each run."""
     while True:
         started = time.time()
-        r = subprocess.run([sys.executable, str(BUILD), "--out", str(DATA)])
+        # The build logs to stderr; with --log that's the log file.
+        r = subprocess.run([sys.executable, str(BUILD), "--out", str(DATA)], stdout=sys.stderr, stderr=sys.stderr)
         if r.returncode != 0:
             print(f"guide refresh failed (exit {r.returncode}); retrying in 10 minutes", flush=True)
             time.sleep(600)
@@ -297,7 +308,19 @@ def main():
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--data", help="directory holding channels.json and guide.json (default web/data)")
     ap.add_argument("--refresh", type=float, default=0, help="rebuild the guide data every N hours (0 = never)")
+    ap.add_argument("--countries", help="countries for the rebuild, e.g. us,ca,uk (default: $COUNTRIES or us)")
+    ap.add_argument("--log", help="append output to this file instead of the console (kept under ~5 MB)")
     a = ap.parse_args()
+    if a.log:
+        # Needed under pythonw.exe (the Windows background task), which has no
+        # console: without it, sys.stderr is None and logging a request fails.
+        log = Path(a.log)
+        log.parent.mkdir(parents=True, exist_ok=True)
+        if log.exists() and log.stat().st_size > 5_000_000:
+            log.replace(log.with_name(log.name + ".1"))
+        sys.stdout = sys.stderr = open(log, "a", encoding="utf-8", errors="replace", buffering=1)
+    if a.countries:
+        os.environ["COUNTRIES"] = a.countries
     if a.data:
         DATA = Path(a.data)
         DATA.mkdir(parents=True, exist_ok=True)

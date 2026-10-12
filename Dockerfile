@@ -12,6 +12,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY scripts/ scripts/
 COPY web/index.html web/app.css web/app.js web/
+# Owned by the app user, so a named volume mounted here starts out writable.
+RUN install -d -o 1000 -g 1000 /data
 
 # Runs as an unprivileged UID; the root filesystem can be read-only because
 # the only thing written is the guide data, which goes to /data (mount an
@@ -19,5 +21,9 @@ COPY web/index.html web/app.css web/app.js web/
 USER 1000:1000
 EXPOSE 8080
 VOLUME ["/data"]
+
+# Healthy once the first guide build has landed (/healthz is 503 until then).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=2m --retries=3 \
+    CMD ["python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/healthz', timeout=4)"]
 
 CMD ["python3", "scripts/serve.py", "--host", "0.0.0.0", "--port", "8080", "--data", "/data", "--refresh", "1"]

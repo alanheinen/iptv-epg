@@ -1,0 +1,70 @@
+# One pod does everything: serves the app, rebuilds the guide data into /data
+# at startup and every hour, and proxies the streams browsers would block.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signal-tv
+  labels:
+    app.kubernetes.io/name: signal-tv
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: signal-tv
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: signal-tv
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: signal-tv
+          image: ghcr.io/alanheinen/iptv-epg:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            # iptv-org playlist prefixes to build (the UK is "uk").
+            - name: COUNTRIES
+              value: us
+          # Idle use is ~25Mi; the hourly rebuild peaks near 150Mi for the
+          # US and ~180Mi for us,ca,uk.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+          # 503 until the first guide build lands (about a minute), so the
+          # pod takes no traffic before it has channels to show.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        # Rebuilt at every start, so nothing here needs to persist.
+        - name: data
+          emptyDir:
+            sizeLimit: 64Mi

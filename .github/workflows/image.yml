@@ -86,7 +86,11 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
+          # latest is for docker-compose.yml and deploy/kubernetes; pin a
+          # sha- tag or digest for anything that must not change under you.
+          tags: |
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+            ${{ env.IMAGE }}:latest
           sbom: true
           provenance: mode=max
 

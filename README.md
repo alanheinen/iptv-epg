@@ -24,14 +24,103 @@ A browser TV guide and player for the free channels listed in
   mpv. Pluto channels and streams that need special headers copy as a link
   through the proxy, since their raw URLs don't play on their own
 
-## Run it locally
+## Install
+
+Every method runs the same thing: `scripts/serve.py`, which serves the page,
+runs the stream proxy, and rebuilds the guide data at startup and every hour.
+The first build takes about a minute. Each one listens on this machine only
+until you change one setting, and each takes the countries to build
+(`us` by default; see [Countries](#countries)).
+
+**Keep it off the internet.** Serve it on your own network at most: exposed
+publicly, the stream proxy is an open relay for anyone's traffic.
+
+| | Needs | Opens it to your network |
+| --- | --- | --- |
+| [Docker](#docker) | Docker with Compose | `ports: "8080:8080"` in `docker-compose.yml` |
+| [Kubernetes](#kubernetes) | a cluster, `kubectl` | an Ingress or Service of your choice |
+| [Linux](#linux-systemd) | Python 3.9+, systemd | `HOST=0.0.0.0` in `/etc/signal-tv.env` |
+| [Windows](#windows) | Python 3.9+ from python.org | `-Lan` (administrator PowerShell) |
+
+Memory: about 25 MiB idle; a rebuild peaks near 150 MiB for the US and
+180 MiB for us,ca,uk. Allow 256 to 512 MiB.
+
+### Docker
+
+```bash
+docker compose up -d        # http://localhost:8080; docker compose ps shows "healthy" when ready
+```
+
+[`docker-compose.yml`](docker-compose.yml) uses `ghcr.io/alanheinen/iptv-epg:latest`,
+or builds it from the checkout if it can't pull (`--build` always builds).
+Set `COUNTRIES` there. It runs read-only as UID 1000 with no capabilities, and
+keeps the feed cache in a named volume, so a restart is ready in seconds.
+Update with `docker compose pull && docker compose up -d`.
+
+Without Compose:
+
+```bash
+docker run -d --name signal-tv --restart unless-stopped -p 127.0.0.1:8080:8080 \
+  -e COUNTRIES=us --read-only --cap-drop ALL -v signal-tv-data:/data \
+  ghcr.io/alanheinen/iptv-epg:latest
+```
+
+### Kubernetes
+
+```bash
+kubectl apply -k deploy/kubernetes
+kubectl -n signal-tv port-forward svc/signal-tv 8080:80     # http://localhost:8080
+```
+
+[`deploy/kubernetes`](deploy/kubernetes) is a Kustomize base: a `signal-tv`
+namespace (Pod Security "restricted"), a one-replica Deployment and a Service.
+Set `COUNTRIES` in `deployment.yaml` and pin the image in
+`kustomization.yaml` (`newTag: sha-<commit>` or a digest) rather than following
+`latest`. `ingress.yaml` is a starting point for reaching it from your
+network; add it to the resources once its host, class and TLS fit your
+cluster. Casting needs the page on HTTPS.
+
+### Linux (systemd)
+
+```bash
+sudo deploy/linux/install.sh                 # http://127.0.0.1:8080
+sudo deploy/linux/install.sh --uninstall
+```
+
+The script copies the app to `/opt/signal-tv` and installs
+[`signal-tv.service`](deploy/linux/signal-tv.service), which runs as a
+throwaway system user (`DynamicUser`) in a tight sandbox, keeps its data in
+`/var/lib/signal-tv`, and restarts on failure. Settings (`COUNTRIES`, `HOST`,
+`PORT`) are in `/etc/signal-tv.env`, written on first install and kept after
+that; `sudo systemctl restart signal-tv` after editing it. Logs:
+`journalctl -u signal-tv`. To update, pull the repository and run the script
+again.
+
+### Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\windows\install.ps1 -Countries us
+powershell -ExecutionPolicy Bypass -File deploy\windows\install.ps1 -Uninstall
+```
+
+[`install.ps1`](deploy/windows/install.ps1) copies the app to
+`%LOCALAPPDATA%\SignalTV` and registers a scheduled task, "Signal TV Guide",
+that runs it with `pythonw.exe` (no console window) whenever you log on, and
+starts it now. No administrator rights needed, except for `-Lan`, which
+listens on every interface and adds a Windows Firewall rule for Private
+networks only. Logs are in `%LOCALAPPDATA%\SignalTV\signal-tv.log`. Run it
+again to update or to change `-Countries`, `-Port` or `-Lan`; `-WhatIf` shows
+what it would do.
+
+### From a checkout
 
 ```bash
 python3 scripts/build.py          # writes web/data/channels.json and guide.json (~30 s)
 python3 scripts/serve.py          # http://127.0.0.1:8080
 ```
 
-Needs only Python 3.9+ (standard library). The listings cover 3 hours back to
+Or `python3 scripts/serve.py --data DIR --refresh 1` to rebuild hourly as the
+services do. Needs only Python 3.9+ (standard library). The listings cover 3 hours back to
 30 hours ahead, but some feeds run short (Samsung TV Plus is often only 4 to
 10 hours ahead), so re-run the build every hour or two. An open page picks up
 new data by itself within 10 minutes.
@@ -92,26 +181,13 @@ names by city) are mapped by hand in `LISTING_TABLE`. CBC New Brunswick and
 North, and BBC Four/CBeebies and BBC Three/CBBC, have no listings: the feed has
 no matching station, or the channel switches between two schedules.
 
-## Container
-
-```bash
-docker build -t signal-tv .
-docker run --rm -p 8080:8080 --read-only --tmpfs /data:uid=1000,gid=1000 signal-tv
-```
-
-The image runs `serve.py` as UID 1000 with a read-only root filesystem. It
-builds the guide data into `/data` at startup (ready in about 35 s; `/healthz`
-returns 503 until then) and rebuilds it every hour. Set `COUNTRIES` (`-e
-COUNTRIES=us,ca,uk`) to change countries. Give it 256 to 512 MiB: idle use is
-about 25 MiB, and a rebuild that downloads every feed peaks near 150 MiB for
-the US (about 180 MiB for us,ca,uk; less when the epgshare01 feeds are cached).
-The build reads only the parts of each feed and iptv-org API file that the
-playlists could use.
+## Image
 
 `.github/workflows/image.yml` builds, smoke-tests and Trivy-scans the image on
-every push and PR, and on `main` pushes `ghcr.io/alanheinen/iptv-epg:sha-<commit>`.
-The homelab deployment pins a digest in k8s-2025 under
-`config/applications/signal-tv/`.
+every push and PR, and on `main` pushes `ghcr.io/alanheinen/iptv-epg:sha-<commit>`
+and `:latest`. The build reads only the parts of each feed and iptv-org API
+file that the playlists could use, which keeps its memory low. The homelab
+deployment pins a digest in k8s-2025 under `config/applications/signal-tv/`.
 
 ## Keys
 
