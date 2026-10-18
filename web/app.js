@@ -480,11 +480,14 @@
   }
 
   // ------------------------------------------------------------ cast
-  // Google Cast (Chromecast, Google TV, Nest Hub) through the Default Media
-  // Receiver. The TV fetches the stream itself and needs HTTPS (the receiver
-  // page blocks plain HTTP) and CORS (it plays HLS with MSE). A stream that
-  // already has both goes to the TV directly; anything else, and Pluto, goes
-  // through this server's proxy, which the TV must be able to resolve and reach.
+  // Google Cast (Chromecast, Google TV, Nest Hub). With CAST_APP_ID set on the
+  // server, the TV runs this server's own receiver (receiver.html), which is
+  // sent just the channel id and does the rest: picks the stream, surfs with
+  // next/previous, follows the listings. Otherwise the Default Media
+  // Receiver gets a stream URL. It needs HTTPS (the receiver page blocks plain
+  // HTTP) and CORS (it plays HLS with MSE): a stream that already has both
+  // goes to the TV directly; anything else, and Pluto, goes through this
+  // server's proxy. Either way the TV must be able to resolve and reach it.
   const Cast = {
     ctx: null,
     session() { return this.ctx && this.ctx.getCurrentSession(); },
@@ -501,7 +504,7 @@
     ready() {
       const cf = cast.framework;
       this.ctx = cf.CastContext.getInstance();
-      this.ctx.setOptions({ receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID, autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED });
+      this.ctx.setOptions({ receiverApplicationId: S.castApp || chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID, autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED });
       // The button stays visible with no devices found: a page can't make
       // Chrome rescan, but opening its Cast picker does, so a click is the
       // "search again".
@@ -585,6 +588,7 @@
       S.playing = { ch: c.id, idx };
       renderStreams(c);
       this.showCasting(c, true);
+      if (S.castApp) return this.loadChannel(c, idx);
       const { url, fmt, via } = await this.source(s, opts);
       if (my !== token || !this.session()) return;
       const info = new chrome.cast.media.MediaInfo(url, "application/x-mpegurl");
@@ -611,6 +615,29 @@
         S.bad.add(s.url);
         if (!opts.single && idx + 1 < c.streams.length) return this.load(c, idx + 1, { ...opts, viaProxy: false });
         this.fail(c, `${this.device()} couldn't play it${err && err.code ? ` (${err.code})` : ""}`);
+      }
+    },
+
+    // Our receiver: the channel id, the list to surf (when it fits in a cast
+    // message) and favorites for the Hub's carousel.
+    async loadChannel(c, idx) {
+      const my = token;
+      const info = new chrome.cast.media.MediaInfo(c.id, "application/x-mpegurl");
+      info.streamType = chrome.cast.media.StreamType.LIVE;
+      info.customData = { stream: idx };
+      const md = new chrome.cast.media.GenericMediaMetadata();
+      md.title = c.name;
+      md.subtitle = `CH ${c.num}`;
+      if (c.logo) md.images = [new chrome.cast.Image(c.logo)];
+      info.metadata = md;
+      const req = new chrome.cast.media.LoadRequest(info);
+      req.autoplay = true;
+      req.customData = { list: S.list.length <= 400 ? S.list.map((x) => x.id) : null, favs: [...S.favs].slice(0, 30) };
+      try {
+        await this.session().loadMedia(req);
+        if (my === token) this.showCasting(c);
+      } catch (err) {
+        if (my === token) this.fail(c, `${this.device()} couldn't play it${err && err.code ? ` (${err.code})` : ""}`);
       }
     },
 
@@ -1036,7 +1063,9 @@
     setInterval(tick, 15000);
     try {
       const h = await fetch("api/health", { cache: "no-store" });
-      S.proxy = h.ok && (await h.json()).proxy === true;
+      const j = h.ok ? await h.json() : {};
+      S.proxy = j.proxy === true;
+      S.castApp = typeof j.cast === "string" ? j.cast : "";
     } catch { S.proxy = false; }
     Cast.init();
     try {

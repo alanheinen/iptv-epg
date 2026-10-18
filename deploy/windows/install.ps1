@@ -108,7 +108,7 @@ if ($PSCmdlet.ShouldProcess($App, "Copy the app")) {
     if (Test-Path $App) { Remove-Item -Recurse -Force $App }
     New-Item -ItemType Directory -Force (Join-Path $App "web"), $Data | Out-Null
     Copy-Item -Recurse (Join-Path $Src "scripts") $App
-    Copy-Item (Join-Path $Src "web\index.html"), (Join-Path $Src "web\app.css"), (Join-Path $Src "web\app.js") (Join-Path $App "web")
+    Copy-Item (Join-Path $Src "web\index.html"), (Join-Path $Src "web\app.css"), (Join-Path $Src "web\app.js"), (Join-Path $Src "web\receiver.html"), (Join-Path $Src "web\receiver.js") (Join-Path $App "web")
     Remove-Item -Recurse -Force (Join-Path $App "scripts\__pycache__") -ErrorAction SilentlyContinue
 }
 

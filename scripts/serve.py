@@ -226,7 +226,7 @@ class Handler(SimpleHTTPRequestHandler):
         path, _, query = self.path.partition("?")
         try:
             if path == "/api/health":
-                return self.send_json({"proxy": True, "pluto": True})
+                return self.send_json({"proxy": True, "pluto": True, "cast": os.environ.get("CAST_APP_ID", "")})
             if path == "/healthz":
                 ok = (DATA / "channels.json").exists()
                 return self.send_json({"ready": ok}) if ok else self.send_error(503, "guide data not built yet")
